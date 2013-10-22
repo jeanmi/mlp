@@ -161,19 +161,19 @@ shinyServer(function(input, output, session) {
       server.env$current.namesout <- input$varchoiceout
       
       # normalize
-      server.env$crt.varin.range <- 
-        sapply(as.data.frame(tmp.matrix[current.train, noms.in]), FUN= range)
-      for (i_var in current.matnamesin)
-        tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - crt.varin.range[1, i_var] ) /
-                                      (crt.varin.range[2, i_var] - crt.varin.range[1, i_var]) ) - 1
-      server.env$crt.varout.mean <- 
-        sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= mean)
-      names(crt.varout.mean) <- current.namesout
-      server.env$crt.varout.sd <- 
-        sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= sd)
-      names(crt.varout.sd) <- current.namesout
-      if (input$activout != "softmax") for (i_var in current.namesout)
-        tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - crt.varout.mean[i_var]) / crt.varout.sd[i_var]
+#       server.env$crt.varin.range <- 
+#         sapply(as.data.frame(tmp.matrix[current.train, noms.in]), FUN= range)
+#       for (i_var in current.matnamesin)
+#         tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - crt.varin.range[1, i_var] ) /
+#                                       (crt.varin.range[2, i_var] - crt.varin.range[1, i_var]) ) - 1
+#       server.env$crt.varout.mean <- 
+#         sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= mean)
+#       names(crt.varout.mean) <- current.namesout
+#       server.env$crt.varout.sd <- 
+#         sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= sd)
+#       names(crt.varout.sd) <- current.namesout
+#       if (input$activout != "softmax") for (i_var in current.namesout)
+#         tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - crt.varout.mean[i_var]) / crt.varout.sd[i_var]
       
       tmp.net <- trainTheNet(tmp.matrix, noms.in= noms.in, 
                              noms.out= input$varchoiceout, 
@@ -197,9 +197,9 @@ shinyServer(function(input, output, session) {
           noms.in= current.matnamesin) / input$ncommittee
       
       # reverse normalization of prediction
-       if (input$activout != "softmax") for (i_var in 1:ncol(current.pred))
-         server.env$current.pred[, i_var] <- (server.env$current.pred[, i_var] * 
-                                                crt.varout.sd[i_var]) + crt.varout.mean[i_var]
+#        if (input$activout != "softmax") for (i_var in 1:ncol(current.pred))
+#          server.env$current.pred[, i_var] <- (server.env$current.pred[, i_var] * 
+#                                                 crt.varout.sd[i_var]) + crt.varout.mean[i_var]
       
       tmp.net
     })
