@@ -46,6 +46,32 @@ predictTheNet <- function(net, newdata, algo, noms.in) {
     return(predict(net, newdata[,noms.in]))
 }
 
+## partial derivatives function for one-hidden layer net
+partialDer <- function(input, matA, matB, index.in, index.out, 
+                       activHid, activOut, standard.in, standard.out) {
+  if (activHid == "logistic") {
+    actHidFun <- function(x) 1/(1+exp(-x))
+    actHidDer <- function(x) {
+      tmp <- actHidFun(x)
+      tmp * (1-tmp)
+    }
+  } else stop("wrong activHid")
+  if (activOut == "identity") {
+    actOutFun <- identity
+    actOutDer <- function(x) matrix(1, nrow= nrow(x), ncol= ncol(x))
+  } else stop("wrong activOut")
+  
+  inputH <- as.matrix(cbind(1, input)) %*% matA
+  matH <- actHidFun(inputH)
+  derH <- actHidDer(inputH)
+
+  inputO <- as.matrix(cbind(1, matH)) %*% matB
+  derO <- actOutDer(inputO)
+  
+  res <- as.matrix(derO * rowSums(derH %*% diag(matA[index.in, ]) %*% diag(matB[-1,index.out]) ))
+  (standard.out/standard.in) * res
+}
+
 
 # Server
 shinyServer(function(input, output, session) {
@@ -426,34 +452,98 @@ shinyServer(function(input, output, session) {
     
   }
   
+  # compute derivatives
+  computeDer <- function(algo, dersample, 
+                         dervarchoicein, dervarchoiceout, ncommittee,
+                         activhid, activout) {
+    
+    tmp.sample <- switch(dersample,
+                         "training"= current.train, 
+                         "test"= current.test,
+                         "whole"= c(current.train, current.test))
+    
+    if (algo == "mlp") {
+      tmp.der <- FNetPartial(le_net= current.net[[1]], 
+                             data_in= current.matrix[tmp.sample, ],
+                             id_var= if(ncol(current.pred) == 1) {0} else 
+                               (1:length(current.namesout))[
+                                 current.namesout ==
+                                   dervarchoiceout] - 1)
+      tmp.der <- tmp.der / ncommittee
+      if (ncommittee >= 2) for (i_commi2 in 2:ncommittee) {
+        tmp.der <- tmp.der + 
+          FNetPartial(le_net= current.net[[i_commi2]], 
+                      data_in= current.matrix[tmp.sample, ],
+                      id_var= if(ncol(current.pred) == 1) {0} else 
+                        (1:length(current.namesout))[
+                          current.namesout ==
+                            dervarchoiceout] - 1) / 
+          ncommittee
+        
+      }
+      tmp.der <- tmp.der * (crt.varout.sd[which(current.namesout == dervarchoiceout)] / 
+                              (crt.varin.range[2, dervarchoicein] - 
+                                 crt.varin.range[1, dervarchoicein]))
+    } else if (algo == "nnet") {
+      matASubset= 1:(current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1]))
+      matBSubset= (1 + current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1])):
+        length(current.net[[1]]$wts)
+      tmp.der <- partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
+                            matA= matrix(current.net[[1]]$wts[matASubset],
+                                         ncol= current.net[[1]]$n[2]),
+                            matB= matrix(current.net[[1]]$wts[matBSubset],
+                                         ncol= current.net[[1]]$n[3]),
+                            index.in= which(current.matnamesin == 
+                                              dervarchoicein),
+                            index.out= which(current.namesout ==
+                                               dervarchoiceout),
+                            activHid= activhid,
+                            activOut= activout,
+                            standard.in= crt.varin.range[2, dervarchoicein] - 
+                              crt.varin.range[1, dervarchoicein],
+                            standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)])
+      tmp.der <- tmp.der / ncommittee
+      
+      if (ncommittee >= 2) for (i_commi2 in 2:ncommittee) {
+        tmp.der <- tmp.der + 
+          partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
+                     matA= matrix(current.net[[i_commi2]]$wts[matASubset],
+                                  ncol= current.net[[i_commi2]]$n[2]),
+                     matB= matrix(current.net[[i_commi2]]$wts[matBSubset],
+                                  ncol= current.net[[i_commi2]]$n[3]),
+                     index.in= which(current.matnamesin == 
+                                       dervarchoicein),
+                     index.out= which(current.namesout ==
+                                        dervarchoiceout),
+                     activHid= input$activhid,
+                     activOut= input$activout,
+                     standard.in= crt.varin.range[2, dervarchoicein] - 
+                       crt.varin.range[1, dervarchoiceout],
+                     standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
+          ncommittee
+      }
+    }
+    as.matrix(tmp.der)
+  }
+  
   # plot derivatives
   plotDer= function() observe({
     if(input$derbutton==0)
       return(NULL)
     
+    if (input$algo == "nnet" & input$activhid != "logistic") 
+      stop("Hidden activation must be logistic")
+    if (input$algo == "nnet" & input$activout != "identity") 
+      stop("Hidden activation must be identity")
+
+    tmp.der <- computeDer(input$algo, input$dersample, 
+                          input$dervarchoicein, input$dervarchoiceout, 
+                          input$ncommittee, input$activhid, 
+                          input$activout)
     tmp.sample <- switch(input$dersample,
                          "training"= current.train, 
                          "test"= current.test,
                          "whole"= c(current.train, current.test))
-
-    tmp.der <- FNetPartial(le_net= current.net[[1]], 
-                           data_in= current.matrix[tmp.sample, ],
-                           id_var= if(ncol(current.pred) == 1) {0} else 
-                           (1:length(current.namesout))[
-                             current.namesout ==
-                               input$dervarchoiceout] - 1) /
-      input$ncommittee
-    if (input$ncommittee >= 2) for (i_commi2 in 2:input$ncommittee) {
-      tmp.der <- tmp.der + 
-        FNetPartial(le_net= current.net[[i_commi2]], 
-                    data_in= current.matrix[tmp.sample, ],
-                    id_var= if(ncol(current.pred) == 1) {0} else 
-                      (1:length(current.namesout))[
-                        current.namesout ==
-                          input$dervarchoiceout] - 1) / 
-        input$ncommittee
-        
-    }
     
     output$derplot <- renderPlot({
       if(!(input$dervarchoicein %in% current.matnamesin))
@@ -461,9 +551,12 @@ shinyServer(function(input, output, session) {
       tmp.varin <- ifelse(input$der2order, 
                           input$dervarchoice2order,
                           input$dervarchoicein)
-      tmp.tab <- cbind(current.data[tmp.sample, tmp.varin],
-                       tmp.der[, (1:ncol(tmp.der))[
-                         colnames(tmp.der) == input$dervarchoicein]])
+      if (input$algo == "mlp") {
+        tmp.tab <- cbind(current.data[tmp.sample, tmp.varin],
+                         tmp.der[, (1:ncol(tmp.der))[
+                           colnames(tmp.der) == input$dervarchoicein]])
+      } else tmp.tab <- cbind(current.data[tmp.sample, tmp.varin], tmp.der)
+      
       plot(tmp.tab, 
            xlab= tmp.varin, 
            ylab= paste("partial (",input$dervarchoiceout,"/",
@@ -482,12 +575,10 @@ shinyServer(function(input, output, session) {
     paste("mlp_der_", input$dervarchoiceout, "_",
           format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
   }, content= function(file) {
-    tmp.der <- FNetPartial(le_net= current.net[[1]], 
-                           data_in= current.matrix,
-                           id_var= if(ncol(current.pred) == 1) {0} else 
-                             (1:length(current.namesout))[
-                               current.namesout ==
-                                 input$dervarchoiceout] - 1)
+    tmp.der <- computeDer(input$algo, input$dersample, 
+                          input$dervarchoicein, input$dervarchoiceout, 
+                          input$ncommittee, input$activhid,
+                          input$activout)
     write.csv(tmp.der, file= file, 
               row.names= rownames(current.all.data)[rownames(current.all.data)
                                                     %in% rownames(current.data)],
