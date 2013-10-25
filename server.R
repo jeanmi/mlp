@@ -481,7 +481,7 @@ shinyServer(function(input, output, session) {
           ncommittee
         
       }
-      tmp.der <- tmp.der * (crt.varout.sd[which(current.namesout == dervarchoiceout)] / 
+      tmp.der <- tmp.der * 2 * (crt.varout.sd[which(current.namesout == dervarchoiceout)] / 
                               (crt.varin.range[2, dervarchoicein] - 
                                  crt.varin.range[1, dervarchoicein]))
     } else if (algo == "nnet") {
@@ -499,8 +499,8 @@ shinyServer(function(input, output, session) {
                                                dervarchoiceout),
                             activHid= activhid,
                             activOut= activout,
-                            standard.in= crt.varin.range[2, dervarchoicein] - 
-                              crt.varin.range[1, dervarchoicein],
+                            standard.in= (crt.varin.range[2, dervarchoicein] - 
+                              crt.varin.range[1, dervarchoicein]) / 2,
                             standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)])
       tmp.der <- tmp.der / ncommittee
       
@@ -517,8 +517,8 @@ shinyServer(function(input, output, session) {
                                         dervarchoiceout),
                      activHid= input$activhid,
                      activOut= input$activout,
-                     standard.in= crt.varin.range[2, dervarchoicein] - 
-                       crt.varin.range[1, dervarchoiceout],
+                     standard.in= (crt.varin.range[2, dervarchoicein] - 
+                       crt.varin.range[1, dervarchoiceout]) / 2,
                      standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
           ncommittee
       }
