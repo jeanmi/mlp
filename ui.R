@@ -52,28 +52,35 @@ shinyUI(pageWithSidebar(
                selectInput("varchoiceout", "Choose output variables:",
                            "(first import file)",
                            multiple= TRUE),
-               selectInput("nhidlay", "Number of hidden layers:", 
-                           choices= 1:4),
-               conditionalPanel("input.nhidlay >= 1", 
-                                numericInput("nhid1", 
-                                             "Number of neurons in hidden
+               conditionalPanel("input.algo != 'mlp'",
+                                numericInput("nhid", 
+                                             "Number of neurons in (single) hidden layer:",
+                                             5, min= 1)),
+               conditionalPanel("input.algo == 'mlp'", 
+                 selectInput("nhidlay", "Number of hidden layers:", 
+                             choices= 1:4),
+                 conditionalPanel("input.nhidlay >= 1", 
+                                  numericInput("nhid1", 
+                                               "Number of neurons in hidden
                                              layer 1:", 
-                                             5, min= 1)),
-               conditionalPanel("input.nhidlay >= 2", 
-                                numericInput("nhid2", 
-                                             "Number of neurons in hidden
+                                               5, min= 1)),
+                 conditionalPanel("input.nhidlay >= 2", 
+                                  numericInput("nhid2", 
+                                               "Number of neurons in hidden
                                              layer 2:", 
-                                             5, min= 1)),
-               conditionalPanel("input.nhidlay >= 3", 
-                                numericInput("nhid3", 
-                                             "Number of neurons in hidden
+                                               5, min= 1)),
+                 conditionalPanel("input.nhidlay >= 3", 
+                                  numericInput("nhid3", 
+                                               "Number of neurons in hidden
                                              layer 3:", 
-                                             5, min= 1)),
-               conditionalPanel("input.nhidlay >= 4", 
-                                numericInput("nhid4", 
-                                             "Number of neurons in hidden
+                                               5, min= 1)),
+                 conditionalPanel("input.nhidlay >= 4", 
+                                  numericInput("nhid4", 
+                                               "Number of neurons in hidden
                                              layer 4:", 
-                                             5, min= 1)),
+                                               5, min= 1))
+               ),
+
                h4("Advanced options"),
                numericInput("maxit", "Max. iterations:", 100),
                uiOutput("ntrain"),
@@ -113,7 +120,6 @@ shinyUI(pageWithSidebar(
                ),
       
       tabPanel("Prediction",
-               actionButton("predbutton", "Predict"),
                downloadButton("preddownload", "Download predictions"),
                selectInput("predsample", "Observations sample:",
                            choices= c("test", "training", "whole")),
@@ -125,9 +131,11 @@ shinyUI(pageWithSidebar(
                checkboxInput("predspline", "Show smoothing spline", TRUE),
                plotOutput("predplot")
                ),
+      
       tabPanel("Partial derivatives",
                actionButton("derbutton", "Predict"),
                downloadButton("derdownload", "Download partial derivatives"),
+               verbatimTextOutput("dertext"),
                selectInput("dersample", "Observations sample:",
                            choices= c("test", "training", "whole")),
                selectInput("dervarchoicein", "Input variable", 

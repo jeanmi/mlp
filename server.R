@@ -84,6 +84,10 @@ shinyServer(function(input, output, session) {
   current.test <- NULL
   current.matrix <- NULL
   current.pred <- NULL
+  
+  current.der <- NULL
+  current.der.varin <- NULL
+  current.der.varout <- NULL
 
   current.matnamesin <- NULL
   current.datnamesin <- NULL
@@ -93,6 +97,8 @@ shinyServer(function(input, output, session) {
   crt.varout.mean <- NULL
   crt.varout.sd <- NULL
   
+  crt.train.clicks <- 0
+  crt.der.clicks <- 0
   
   # File input
   dInput <- reactive({
@@ -154,123 +160,133 @@ shinyServer(function(input, output, session) {
     server.env$current.test <- (1:nrow(current.data))[-current.train]
   }
   
+  # Adapt choice of activations to choice of model
+  observe({
+    updateSelectInput(session, "activhid", 
+                      choices= switch(input$algo,
+                                      "mlp"= c("htan", "logistic"),
+                                      "nnet"= "logistic",
+                                      "elm"= "logistic"))    
+    updateSelectInput(session, "activout", 
+                      choices= switch(input$algo,
+                                      "mlp"= c("identity", "softmax"),
+                                      "nnet"= "identity",
+                                      "elm"= "identity"))    
+  })
+  
   # Train the net when the button is hit
-  theTrain<- function() {
-    input$trainbutton
-    server.env$current.net <- isolate({
-      # remove from working data the obs where input or output are NA
-      server.env$current.data <- server.env$current.all.data[
-        rowSums(is.na(current.all.data[,c(input$varchoicein, 
-                                          input$varchoiceout)])) == 0, ]
-      
-      set.seed(input$randseed)
-      updateSamples()
-      tmp.matrix <- model.matrix(as.formula(object= paste("~ 0+", 
-                                                  paste(input$varchoicein, 
-                                                        collapse= "+") )),
-                                 data= current.data)
-      tmp.rownames <- rownames(tmp.matrix)
-      noms.in <- colnames(tmp.matrix)
-      tmp.matrix <- as.matrix(cbind(current.data[rownames(tmp.matrix),
-                                                 input$varchoiceout], 
-                                    tmp.matrix))
-      colnames(tmp.matrix) <- c(input$varchoiceout, noms.in)
-      rownames(tmp.matrix) <- tmp.rownames
-#       tmp.matout <- model.matrix(as.formula(paste("~ 0 +", paste(input$varchoiceout, collapse= "+"))),
-#                                  data= current.data)
-#       server.env$current.matnamesout <- colnames(tmp.matout)
-#       tmp.matrix <- cbind(tmp.matout, tmp.matrix)
-
-      server.env$current.matrix <- tmp.matrix
-      server.env$current.matnamesin <- noms.in
-      server.env$current.datnamesin <- input$varchoicein
-      server.env$current.namesout <- input$varchoiceout
-      
-      # normalize
-      server.env$crt.varin.range <- 
-        sapply(as.data.frame(tmp.matrix[current.train, noms.in]), FUN= range)
-      for (i_var in current.matnamesin)
-        tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - crt.varin.range[1, i_var] ) /
-                                      (crt.varin.range[2, i_var] - crt.varin.range[1, i_var]) ) - 1
-      server.env$crt.varout.mean <- 
-        sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= mean)
-      names(crt.varout.mean) <- current.namesout
-      server.env$crt.varout.sd <- 
-        sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= sd)
-      names(crt.varout.sd) <- current.namesout
-      if (input$activout != "softmax") for (i_var in current.namesout)
-        tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - crt.varout.mean[i_var]) / crt.varout.sd[i_var]
-      
-      tmp.net <- trainTheNet(tmp.matrix, noms.in= noms.in, 
-                             noms.out= input$varchoiceout, 
-                             hidden= c(input$nhid1, input$nhid2, 
-                                       input$nhid3, 
-                                       input$nhid4)[1:input$nhidlay],
-                             niter= input$maxit, 
-                             activ.hid= input$activhid, 
-                             activ.out= input$activout,
-                             rand.seed= input$randseed, train= current.train, 
-                             test= current.test, regul= input$regul,
-                             ncommit= input$ncommittee, algo= input$algo)
-      
-
-      # predict
-      server.env$current.pred <- matrix(0, ncol= length(input$varchoiceout),
-                                        nrow= nrow(current.matrix))
-      for (i_commi in 1:input$ncommittee)
-        server.env$current.pred <- server.env$current.pred + predictTheNet(
-          net= tmp.net[[i_commi]], newdata= tmp.matrix, algo= input$algo, 
-          noms.in= current.matnamesin) / input$ncommittee
-      
-      # reverse normalization of prediction
-       if (input$activout != "softmax") for (i_var in 1:ncol(current.pred))
-         server.env$current.pred[, i_var] <- (server.env$current.pred[, i_var] * 
-                                                crt.varout.sd[i_var]) + crt.varout.mean[i_var]
-      
-      tmp.net
-    })
+  theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
+    # remove from working data the obs where input or output are NA
+    server.env$current.data <- server.env$current.all.data[
+      rowSums(is.na(current.all.data[,c(input$varchoicein, 
+                                        input$varchoiceout)])) == 0, ]
+    
+    set.seed(input$randseed)
+    updateSamples()
+    tmp.matrix <- model.matrix(as.formula(object= paste("~ 0+", 
+                                                        paste(input$varchoicein, 
+                                                              collapse= "+") )),
+                               data= current.data)
+    tmp.rownames <- rownames(tmp.matrix)
+    noms.in <- colnames(tmp.matrix)
+    tmp.matrix <- as.matrix(cbind(current.data[rownames(tmp.matrix),
+                                               input$varchoiceout], 
+                                  tmp.matrix))
+    colnames(tmp.matrix) <- c(input$varchoiceout, noms.in)
+    rownames(tmp.matrix) <- tmp.rownames
+    
+    server.env$current.matrix <- tmp.matrix
+    server.env$current.matnamesin <- noms.in
+    server.env$current.datnamesin <- input$varchoicein
+    server.env$current.namesout <- input$varchoiceout
+    
+    # normalize
+    server.env$crt.varin.range <- 
+      sapply(as.data.frame(tmp.matrix[current.train, noms.in]), FUN= range)
+    for (i_var in current.matnamesin)
+      tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - crt.varin.range[1, i_var] ) /
+                                    (crt.varin.range[2, i_var] - crt.varin.range[1, i_var]) ) - 1
+    server.env$crt.varout.mean <- 
+      sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= mean)
+    names(crt.varout.mean) <- current.namesout
+    server.env$crt.varout.sd <- 
+      sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= sd)
+    names(crt.varout.sd) <- current.namesout
+    if (input$activout != "softmax") for (i_var in current.namesout)
+      tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - crt.varout.mean[i_var]) / crt.varout.sd[i_var]
+    
+    if (input$algo == "mlp") {
+      tmp.hidden <- c(input$nhid1, input$nhid2, 
+                      input$nhid3, 
+                      input$nhid4)[1:input$nhidlay]
+    } else tmp.hidden <- input$nhid
+    
+    tmp.net <- trainTheNet(tmp.matrix, noms.in= noms.in, 
+                           noms.out= input$varchoiceout, 
+                           hidden= tmp.hidden,
+                           niter= input$maxit, 
+                           activ.hid= input$activhid, 
+                           activ.out= input$activout,
+                           rand.seed= input$randseed, train= current.train, 
+                           test= current.test, regul= input$regul,
+                           ncommit= input$ncommittee, algo= input$algo)
+    
+    
+    # predict
+    server.env$current.pred <- matrix(0, ncol= length(input$varchoiceout),
+                                      nrow= nrow(current.matrix))
+    for (i_commi in 1:input$ncommittee)
+      server.env$current.pred <- server.env$current.pred + predictTheNet(
+        net= tmp.net[[i_commi]], newdata= tmp.matrix, algo= input$algo, 
+        noms.in= current.matnamesin) / input$ncommittee
+    
+    # reverse normalization of prediction
+    if (input$activout != "softmax") for (i_var in 1:ncol(current.pred))
+      server.env$current.pred[, i_var] <- (server.env$current.pred[, i_var] * 
+                                             crt.varout.sd[i_var]) + crt.varout.mean[i_var]
+    # save net
+    server.env$current.net <- tmp.net
     
     # Update variables and launch plots
     updateVarDiagno()
-    plotDiagno()
     updateVarPred() 
-    plotPred()
     updateVarDer()
-    plotDer()
     
-    # return the computed net
-    server.env$current.net
-  }
+    # Update train button counter
+    server.env$crt.train.clicks <- input$trainbutton
+  }})
   
   # Render the summary of the SOM
   output$summary <- renderPrint({ 
     dInput()
     if (is.null(input$file1))
       return("First import a dataset.")
-    if (input$trainbutton==0) 
+    input$trainbutton
+    if (is.null(current.net)) 
       return("Hit the Train button to train the neural network.")
     
-    theTrain()
-
-    cat(
-      if (nrow(current.all.data) != nrow(current.data)) {
-        paste("Warning:", nrow(current.all.data) - nrow(current.data), 
-              "observations removed because of NA values.\n")
-      } else {""},
-     paste("Train MSE:", 
-           mean((current.pred[current.train,]-
-                   as.matrix(current.data[current.train, input$varchoiceout]))**2)),'\n',
-     paste("Test MSE:", 
-           mean((current.pred[current.test,]-
-                   as.matrix(current.data[current.test, input$varchoiceout]))**2)), '\n',
-    paste("Committee members training errors\n", 
-            paste(sapply(current.net, 
-                         function(x) switch(input$algo,
-                                            "mlp"= x$MSE_final,
-                                            "elm"= mean(x$residuals**2),
-                                            "nnet"= mean(x$residuals**2))),
-                  collapse= " "))
-    )
+    isolate({
+      cat(input$trainbutton, crt.train.clicks,
+        if (nrow(current.all.data) != nrow(current.data)) {
+          paste("Warning:", nrow(current.all.data) - nrow(current.data), 
+                "observations removed because of NA values.\n")
+        } else {""},
+        paste("Train MSE:", 
+              mean((current.pred[current.train,]-
+                      as.matrix(current.data[current.train, input$varchoiceout]))**2)),'\n',
+        paste("Test MSE:", 
+              mean((current.pred[current.test,]-
+                      as.matrix(current.data[current.test, input$varchoiceout]))**2)), '\n',
+        paste("Committee members training errors\n", 
+              paste(sapply(current.net, 
+                           function(x) switch(input$algo,
+                                              "mlp"= x$MSE_final,
+                                              "elm"= mean(x$residuals**2),
+                                              "nnet"= mean(x$residuals**2))),
+                    collapse= " "))
+      )
+    })
+    
   })
   
   ##############################################################################
@@ -284,102 +300,114 @@ shinyServer(function(input, output, session) {
     updateSelectInput(session, "diagvarchoicein",
                       choices= current.datnamesin)
   }
-
+  
+  # update available plots in diagnostics
+  observe({
+    updateSelectInput(session, "diagplottype", 
+                      choices= switch(input$algo, 
+                                      "mlp"= list("Training error"= "trainerr",
+                                                  "Actual vs Fitted"= "actfit",
+                                                  "Error distribution"= "errdistr",
+                                                  "Residual vs Fitted"= "residfit",
+                                                  "Residual vs Predictor"= "residinput"),
+                                      list("Actual vs Fitted"= "actfit",
+                                           "Error distribution"= "errdistr",
+                                           "Residual vs Fitted"= "residfit",
+                                           "Residual vs Predictor"= "residinput")))
+  })
+  
   # Diagnostics plot
-  plotDiagno= function() observe({
-    if(input$trainbutton==0)
-      return(NULL)
+  output$diagplot <- renderPlot({
+    input$trainbutton
     if(is.null(current.net))
       return(NULL)
     
-    output$diagplot <- renderPlot({
-      tmp.sample <- switch(input$diagsample,
-                           "training"= current.train, 
-                           "test"= current.test,
-                           "whole"= c(current.train, current.test))
-      switch(input$diagplottype, 
-             "trainerr"= {
-               plot(current.net[[1]]$evol_err, ylim= range(c(current.net[[1]]$evol_err, 
-                                                        current.net[[1]]$evol_test)),
-                    xlab= "iteration", ylab= "training error")
-               lines(current.net[[1]]$evol_test, t="p", col= 2)
-               legend("topright", col= 1:2, pch= c(1,1), 
-                      c("Training sample error", "Test sample error"))
-             },
-             "actfit"= {
-               plot(current.pred[tmp.sample, 
-                                 if(ncol(current.pred) == 1) {1} else 
-                                   (1:ncol(current.pred))[
-                                     current.namesout == 
-                                       input$predvarchoiceout]],
-                    current.data[tmp.sample, input$diagvarchoiceout],
-                    xlab= paste("predicted", input$diagvarchoiceout),
-                    ylab= paste("observed", input$diagvarchoiceout))
-               abline(0,1,col=2,lwd=2,lty=2)
-               legend("topleft", col= 2, lwd= 2, lty= 2, "y = x")
-             },
-             "residfit"= {
-               tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
-                 current.pred[tmp.sample, 
-                              if(ncol(current.pred) == 1) {1} else 
-                                (1:ncol(current.pred))[
-                                  current.namesout == 
-                                    input$predvarchoiceout]]
-               
-               plot(current.pred[tmp.sample, 
-                                 if(ncol(current.pred) == 1) {1} else 
-                                   (1:ncol(current.pred))[
-                                     current.namesout == 
-                                       input$predvarchoiceout]],
-                    tmp.resid,
-                    xlab= paste("predicted", input$diagvarchoiceout),
-                    ylab= paste("prediction error for", input$diagvarchoiceout),
-                    main= paste("mean error:",
-                                mean(tmp.resid), "\nmean absolute deviation:",
-                                mean(abs(tmp.resid)), 
-                                "\nroot mean squared error:",
-                                sqrt(mean(tmp.resid**2))))
-                    abline(h=0,col=2,lwd=2,lty=2)
-               legend("bottom", col=2,lwd=2,lty=2, "error = 0")
-             },
-             "residinput"= {
-               tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
-                 current.pred[tmp.sample, 
-                              if(ncol(current.pred) == 1) {1} else 
-                                (1:ncol(current.pred))[
-                                  current.namesout == 
-                                    input$predvarchoiceout]]
-               plot(current.data[tmp.sample, input$diagvarchoicein], 
-                    tmp.resid,
-                    xlab= paste("observed", input$diagvarchoicein),
-                    ylab= paste("prediction error for", input$diagvarchoiceout),
-                    main= paste("mean error:",
-                                mean(tmp.resid), "\nmean absolute deviation:",
-                                mean(abs(tmp.resid)), 
-                                "\nroot mean squared error:",
-                                sqrt(mean(tmp.resid**2)))
-               )
-               abline(h=0,col=2,lwd=2,lty=2)
-               legend("bottom", lty= 2, lwd= 2, col= 2, "error = 0")
-             },
-             "errdistr"= {
-               tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
-                 current.pred[tmp.sample, 
-                              if(ncol(current.pred) == 1) {1} else 
-                                (1:ncol(current.pred))[
-                                  current.namesout == 
-                                    input$predvarchoiceout]]
-               plot(density(tmp.resid, bw= "SJ"),
-                    xlab= paste("prediction error for", input$diagvarchoiceout),
-                    ylab= paste("density"), main= "prediction error density")
-               rug(tmp.resid)
-               abline(v=0, col= 2, lty= 2)
-               legend("topleft", col= 2, lty= 2, "error = 0")
-             }
+    tmp.sample <- switch(input$diagsample,
+                         "training"= current.train, 
+                         "test"= current.test,
+                         "whole"= c(current.train, current.test))
+    switch(input$diagplottype, 
+           "trainerr"= {
+             plot(current.net[[1]]$evol_err, ylim= range(c(current.net[[1]]$evol_err, 
+                                                           current.net[[1]]$evol_test)),
+                  xlab= "iteration", ylab= "training error")
+             lines(current.net[[1]]$evol_test, t="p", col= 2)
+             legend("topright", col= 1:2, pch= c(1,1), 
+                    c("Training sample error", "Test sample error"))
+           },
+           "actfit"= {
+             plot(current.pred[tmp.sample, 
+                               if(ncol(current.pred) == 1) {1} else 
+                                 (1:ncol(current.pred))[
+                                   current.namesout == 
+                                     input$predvarchoiceout]],
+                  current.data[tmp.sample, input$diagvarchoiceout],
+                  xlab= paste("predicted", input$diagvarchoiceout),
+                  ylab= paste("observed", input$diagvarchoiceout))
+             abline(0,1,col=2,lwd=2,lty=2)
+             legend("topleft", col= 2, lwd= 2, lty= 2, "y = x")
+           },
+           "residfit"= {
+             tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
+               current.pred[tmp.sample, 
+                            if(ncol(current.pred) == 1) {1} else 
+                              (1:ncol(current.pred))[
+                                current.namesout == 
+                                  input$predvarchoiceout]]
              
-      )
-      
-      })
+             plot(current.pred[tmp.sample, 
+                               if(ncol(current.pred) == 1) {1} else 
+                                 (1:ncol(current.pred))[
+                                   current.namesout == 
+                                     input$predvarchoiceout]],
+                  tmp.resid,
+                  xlab= paste("predicted", input$diagvarchoiceout),
+                  ylab= paste("prediction error for", input$diagvarchoiceout),
+                  main= paste("mean error:",
+                              mean(tmp.resid), "\nmean absolute deviation:",
+                              mean(abs(tmp.resid)), 
+                              "\nroot mean squared error:",
+                              sqrt(mean(tmp.resid**2))))
+             abline(h=0,col=2,lwd=2,lty=2)
+             legend("bottom", col=2,lwd=2,lty=2, "error = 0")
+           },
+           "residinput"= {
+             tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
+               current.pred[tmp.sample, 
+                            if(ncol(current.pred) == 1) {1} else 
+                              (1:ncol(current.pred))[
+                                current.namesout == 
+                                  input$predvarchoiceout]]
+             plot(current.data[tmp.sample, input$diagvarchoicein], 
+                  tmp.resid,
+                  xlab= paste("observed", input$diagvarchoicein),
+                  ylab= paste("prediction error for", input$diagvarchoiceout),
+                  main= paste("mean error:",
+                              mean(tmp.resid), "\nmean absolute deviation:",
+                              mean(abs(tmp.resid)), 
+                              "\nroot mean squared error:",
+                              sqrt(mean(tmp.resid**2)))
+             )
+             abline(h=0,col=2,lwd=2,lty=2)
+             legend("bottom", lty= 2, lwd= 2, col= 2, "error = 0")
+           },
+           "errdistr"= {
+             tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
+               current.pred[tmp.sample, 
+                            if(ncol(current.pred) == 1) {1} else 
+                              (1:ncol(current.pred))[
+                                current.namesout == 
+                                  input$predvarchoiceout]]
+             plot(density(tmp.resid, bw= "SJ"),
+                  xlab= paste("prediction error for", input$diagvarchoiceout),
+                  ylab= paste("density"), main= "prediction error density")
+             rug(tmp.resid)
+             abline(v=0, col= 2, lty= 2)
+             legend("topleft", col= 2, lty= 2, "error = 0")
+           }
+           
+    )
+    
   })
   
   ##############################################################################
@@ -395,47 +423,48 @@ shinyServer(function(input, output, session) {
   }
   
   # plot predictions
-  plotPred= function() observe({
-    if(input$predbutton==0)
-      return(NULL)
+  output$predplot <- renderPlot({
+    input$trainbutton
+    if (is.null(current.net)) return(NULL)
     
-    output$predplot <- renderPlot({
-      tmp.sample <- switch(input$predsample,
-                               "training"= current.train, 
-                               "test"= current.test,
-                               "whole"= c(current.train, current.test))
-      tmp.tab <- data.frame(current.data[tmp.sample, input$predvarchoicein],
-                       current.pred[tmp.sample, if(ncol(current.pred) == 1) {1} else 
-                         (1:ncol(current.pred))[current.namesout == input$predvarchoiceout]])
-      plot(tmp.tab, 
-           xlab= input$predvarchoicein, 
-           ylab= input$predvarchoiceout,
-           ylim= range(current.data[tmp.sample, input$predvarchoiceout]))
+    tmp.sample <- switch(input$predsample,
+                         "training"= current.train, 
+                         "test"= current.test,
+                         "whole"= c(current.train, current.test))
+    tmp.tab <- data.frame(current.data[tmp.sample, input$predvarchoicein],
+                          current.pred[tmp.sample, if(ncol(current.pred) == 1) {1} else 
+                            (1:ncol(current.pred))[current.namesout == input$predvarchoiceout]])
+    plot(tmp.tab, 
+         xlab= input$predvarchoicein, 
+         ylab= input$predvarchoiceout,
+         ylim= range(current.data[tmp.sample, input$predvarchoiceout]))
+    if (input$predspline)
+      lines(smooth.spline(tmp.tab, cv=  TRUE), col= 2, lwd= 2)
+    if(input$predshowobs == TRUE) {
+      lines(current.data[tmp.sample, c(input$predvarchoicein, 
+                                       input$predvarchoiceout)],
+            col= 3, pch= 2, t= "p")
       if (input$predspline)
-        lines(smooth.spline(tmp.tab, cv=  TRUE), col= 2, lwd= 2)
-      if(input$predshowobs == TRUE) {
-        lines(current.data[tmp.sample, c(input$predvarchoicein, 
-                                           input$predvarchoiceout)],
-              col= 3, pch= 2, t= "p")
-        if (input$predspline)
-          lines(smooth.spline(current.data[tmp.sample, 
-                                           c(input$predvarchoicein,
-                                             input$predvarchoiceout)], cv= TRUE),
+        lines(smooth.spline(current.data[tmp.sample, 
+                                         c(input$predvarchoicein,
+                                           input$predvarchoiceout)], cv= TRUE),
               lty=2, col= 4, lwd= 2)
-      }
-    })
-    
-    # Download predictions
-    output$preddownload <- downloadHandler(filename= function() {
+    }
+  })
+  
+  # Download predictions
+  output$preddownload <- {
+    downloadHandler(filename= function() {
       paste("mlp_pred_",format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
     }, 
-                                           content= function(file) {
-      write.csv(current.pred, file= file, 
-                row.names= rownames(current.all.data)[rownames(current.all.data)
-                                                      %in% rownames(current.data)],
-                col.names= input$varchoiceout)
-    })
-  })
+                    content= function(file) {
+                      write.csv(current.pred, file= file, 
+                                row.names= rownames(current.all.data)[rownames(current.all.data)
+                                                                      %in% rownames(current.data)],
+                                col.names= input$varchoiceout)
+                    })
+  }
+    
   
   ##############################################################################
   ## Partial derivatives
@@ -524,60 +553,84 @@ shinyServer(function(input, output, session) {
     as.matrix(tmp.der)
   }
   
-  # plot derivatives
-  plotDer= function() observe({
-    if(input$derbutton==0)
-      return(NULL)
+  # compute derivatives when button is hit
+  observe({
+    input$trainbutton
+    if (is.null(current.net)) return(NULL)
+    input$derbutton
+    if (input$derbutton > crt.der.clicks) {
+      if (input$algo == "nnet" & input$activhid != "logistic") 
+        stop("Hidden activation must be logistic")
+      if (input$algo == "nnet" & input$activout != "identity") 
+        stop("Hidden activation must be identity")
+      
+      server.env$current.der <- computeDer(input$algo, input$dersample, 
+                                           input$dervarchoicein, 
+                                           input$dervarchoiceout, 
+                                           input$ncommittee, 
+                                           input$activhid, 
+                                           input$activout)
+      server.env$current.der.varin <- input$dervarchoicein
+      server.env$current.der.varout <- input$dervarchoiceout
+      crt.der.clicks <- input$derbutton
+    }
+  })
+  
+  # current derivative 
+  output$dertext <- renderPrint({
+    input$trainbutton
+    if (is.null(current.net)) return("First train net.")
+    input$derbutton
+    if (is.null(current.der)) 
+      return("Click predict button to predict derivatives.")
     
-    if (input$algo == "nnet" & input$activhid != "logistic") 
-      stop("Hidden activation must be logistic")
-    if (input$algo == "nnet" & input$activout != "identity") 
-      stop("Hidden activation must be identity")
-
-    tmp.der <- computeDer(input$algo, input$dersample, 
-                          input$dervarchoicein, input$dervarchoiceout, 
-                          input$ncommittee, input$activhid, 
-                          input$activout)
+    cat("Current : partial derivative of", current.der.varout,
+        "with respect to", current.der.varin,
+        "\n(click predict button to change variables)")
+    
+  })
+  
+  # plot derivatives
+  output$derplot <- renderPlot({
+    input$trainbutton
+    if (is.null(current.net)) return(NULL)
+    input$derbutton
+    if (is.null(current.der)) return(NULL)
+    
     tmp.sample <- switch(input$dersample,
                          "training"= current.train, 
                          "test"= current.test,
                          "whole"= c(current.train, current.test))
     
-    output$derplot <- renderPlot({
-      if(!(input$dervarchoicein %in% current.matnamesin))
-        stop("Input variable must be numeric.")
-      tmp.varin <- ifelse(input$der2order, 
-                          input$dervarchoice2order,
-                          input$dervarchoicein)
-      if (input$algo == "mlp") {
-        tmp.tab <- cbind(current.data[tmp.sample, tmp.varin],
-                         tmp.der[, (1:ncol(tmp.der))[
-                           colnames(tmp.der) == input$dervarchoicein]])
-      } else tmp.tab <- cbind(current.data[tmp.sample, tmp.varin], tmp.der)
-      
-      plot(tmp.tab, 
-           xlab= tmp.varin, 
-           ylab= paste("partial (",input$dervarchoiceout,"/",
-                       input$dervarchoicein,")"),
-           ylim= range(c(0,tmp.tab[,2])))
-      tmp.spline= smooth.spline(tmp.tab, cv=  TRUE)
-      if (input$derspline)
-        lines(tmp.spline$x, tmp.spline$y, col= 2, lwd= 2)
-      abline(h=0, col= 4)
-      legend("topleft", lty= 1, col= 4, "y=0")
-    })
-  })
+    if(!(current.der.varin %in% current.matnamesin))
+      stop("Input variable must be numeric.")
+    tmp.varin <- ifelse(input$der2order, 
+                        input$dervarchoice2order,
+                        current.der.varin)
+    if (input$algo == "mlp") {
+      tmp.tab <- cbind(current.data[tmp.sample, tmp.varin],
+                       current.der[, which(colnames(current.der) == 
+                                             current.der.varin)])
+    } else tmp.tab <- cbind(current.data[tmp.sample, tmp.varin], current.der)
     
+    plot(tmp.tab, 
+         xlab= tmp.varin, 
+         ylab= paste("partial (",current.der.varout,"/",
+                     current.der.varin,")"),
+         ylim= range(c(0,tmp.tab[,2])))
+    tmp.spline= smooth.spline(tmp.tab, cv=  TRUE)
+    if (input$derspline)
+      lines(tmp.spline$x, tmp.spline$y, col= 2, lwd= 2)
+    abline(h=0, col= 4)
+    legend("topleft", lty= 1, col= 4, "y=0")
+  })
+  
   # Download derivatives
   output$derdownload <- downloadHandler(filename= function() {
-    paste("mlp_der_", input$dervarchoiceout, "_",
+    paste("mlp_der_", current.der.varout, "_",
           format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
   }, content= function(file) {
-    tmp.der <- computeDer(input$algo, input$dersample, 
-                          input$dervarchoicein, input$dervarchoiceout, 
-                          input$ncommittee, input$activhid,
-                          input$activout)
-    write.csv(tmp.der, file= file, 
+    write.csv(current.der, file= file, 
               row.names= rownames(current.all.data)[rownames(current.all.data)
                                                     %in% rownames(current.data)],
               col.names= current.matnamesin)
