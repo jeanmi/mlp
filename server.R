@@ -68,7 +68,7 @@ partialDer <- function(input, matA, matB, index.in, index.out,
   inputO <- as.matrix(cbind(1, matH)) %*% matB
   derO <- actOutDer(inputO)
   
-  res <- as.matrix(derO * rowSums(derH %*% diag(matA[index.in, ]) %*% diag(matB[-1,index.out]) ))
+  res <- as.matrix(derO * rowSums(derH %*% diag(matA[index.in + 1, ] * matB[-1,index.out]) ))
   (standard.out/standard.in) * res
 }
 
@@ -463,14 +463,8 @@ shinyServer(function(input, output, session) {
                          "whole"= c(current.train, current.test))
     
     if (algo == "mlp") {
-      tmp.der <- FNetPartial(le_net= current.net[[1]], 
-                             data_in= current.matrix[tmp.sample, ],
-                             id_var= if(ncol(current.pred) == 1) {0} else 
-                               (1:length(current.namesout))[
-                                 current.namesout ==
-                                   dervarchoiceout] - 1)
-      tmp.der <- tmp.der / ncommittee
-      if (ncommittee >= 2) for (i_commi2 in 2:ncommittee) {
+      tmp.der <- 0
+      for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
           FNetPartial(le_net= current.net[[i_commi2]], 
                       data_in= current.matrix[tmp.sample, ],
@@ -485,26 +479,11 @@ shinyServer(function(input, output, session) {
                               (crt.varin.range[2, dervarchoicein] - 
                                  crt.varin.range[1, dervarchoicein]))
     } else if (algo == "nnet") {
+      tmp.der <- 0
       matASubset= 1:(current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1]))
       matBSubset= (1 + current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1])):
         length(current.net[[1]]$wts)
-      tmp.der <- partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
-                            matA= matrix(current.net[[1]]$wts[matASubset],
-                                         ncol= current.net[[1]]$n[2]),
-                            matB= matrix(current.net[[1]]$wts[matBSubset],
-                                         ncol= current.net[[1]]$n[3]),
-                            index.in= which(current.matnamesin == 
-                                              dervarchoicein),
-                            index.out= which(current.namesout ==
-                                               dervarchoiceout),
-                            activHid= activhid,
-                            activOut= activout,
-                            standard.in= (crt.varin.range[2, dervarchoicein] - 
-                              crt.varin.range[1, dervarchoicein]) / 2,
-                            standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)])
-      tmp.der <- tmp.der / ncommittee
-      
-      if (ncommittee >= 2) for (i_commi2 in 2:ncommittee) {
+      for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
           partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
                      matA= matrix(current.net[[i_commi2]]$wts[matASubset],
@@ -518,7 +497,26 @@ shinyServer(function(input, output, session) {
                      activHid= input$activhid,
                      activOut= input$activout,
                      standard.in= (crt.varin.range[2, dervarchoicein] - 
-                       crt.varin.range[1, dervarchoiceout]) / 2,
+                       crt.varin.range[1, dervarchoicein]) / 2,
+                     standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
+          ncommittee
+      }
+    } else if (algo == "elm") {
+      tmp.der <- 0
+      for (i_commi in 1:ncommittee) {
+        tmp.der <- tmp.der + 
+          partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
+                     matA= as.matrix(rbind(current.net[[i_commi]]$biashid, 
+                                           t(current.net[[i_commi]]$inpweight))),
+                     matB= rbind(0, current.net[[i_commi]]$outweight),
+                     index.in= which(current.matnamesin == 
+                                       dervarchoicein),
+                     index.out= which(current.namesout ==
+                                        dervarchoiceout),
+                     activHid= input$activhid,
+                     activOut= input$activout,
+                     standard.in= (crt.varin.range[2, dervarchoicein] - 
+                                     crt.varin.range[1, dervarchoicein]) / 2,
                      standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
           ncommittee
       }
