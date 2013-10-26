@@ -51,6 +51,7 @@ shinyUI(pageWithSidebar(
                h4("Options"),
                numericInput("ncommittee", "Number of neural networks in the
                             committee:", value= 1, min= 1),
+               uiOutput("varchoice"),
                selectInput("varchoicein", "Choose input variables:",
                            "(first import file)",
                            multiple= TRUE),

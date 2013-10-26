@@ -9,7 +9,7 @@ options(shiny.maxRequestSize= 30*1024^2)
 trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
                         activ.hid, activ.out, rand.seed, train, test, regul,
                         ncommittee, algo) {
-    #  set.seed(rand.seed)
+  #  set.seed(rand.seed)
   res= NULL
   for (i_comm in 1:ncommittee) {
     if (algo == "mlp") {
@@ -100,25 +100,34 @@ shinyServer(function(input, output, session) {
     input$fit
     if(crt.n.fits == 0) return(NULL)
     
-    cat(input$trainbutton, crt.train.clicks,
+    cat(" Training sample MSE :", mean((active.fit$pred[active.fit$train,]-
+                                               as.matrix(active.fit$data[active.fit$train,
+                                                                         active.fit$namesout]))**2),
+        "\n",
+        "Test sample MSE     :", mean((active.fit$pred[active.fit$test,]-
+                                               as.matrix(active.fit$data[active.fit$test, active.fit$namesout]))**2),
+        "\n\n Model :\n",
+        "(",paste(active.fit$namesout, collapse= ", "), ") = f(",
+        paste(active.fit$matnamesin, collapse= ", "), ")\n\n",
+        "Training algorithm        :", active.fit$algo, '\n',
+        "Number of networks        :", active.fit$ncommittee, '\n',
+        "Hidden neurons per net    :", active.fit$hidden, '\n', 
+        "Hidden neurons activation :", active.fit$activhid, "\n",
+        "Output neurons activation :", active.fit$activout, "\n",
+        "Max. number of iterations :", active.fit$maxit, '\n\n',
         if (nrow(current.all.data) != nrow(active.fit$data)) {
-          paste("Warning:", nrow(current.all.data) - nrow(active.fit$data), 
+          paste("\n", "Warning:", nrow(current.all.data) - nrow(active.fit$data), 
                 "observations removed because of NA values.\n")
-        } else {""},
-        paste("Train MSE:", 
-              mean((active.fit$pred[active.fit$train,]-
-                      as.matrix(active.fit$data[active.fit$train,
-                                             active.fit$namesout]))**2)),'\n',
-        paste("Test MSE:", 
-              mean((active.fit$pred[active.fit$test,]-
-                      as.matrix(active.fit$data[active.fit$test, active.fit$namesout]))**2)), '\n',
-        paste("Committee members training errors\n", 
-              paste(sapply(active.fit$net, 
+        } else {""}, "\n",
+        if (active.fit$ncommittee > 1) 
+          "Individual committee members errors\n", 
+        if (active.fit$ncommittee > 1) 
+          as.matrix(sapply(active.fit$net, 
                            function(x) switch(active.fit$algo,
                                               "mlp"= x$MSE_final,
                                               "elm"= mean(x$residuals**2),
-                                              "nnet"= mean(x$residuals**2))),
-                    collapse= " "))
+                                              "nnet"= mean(x$residuals**2))))          
+
     )
     
   })
@@ -139,11 +148,6 @@ shinyServer(function(input, output, session) {
                               row.names=1, dec=input$dec)
     } else the.table <- read.table(in.file$datapath, header=input$header, 
                                    sep=input$sep, quote=input$quote, dec=input$dec)
-    
-    # update the "input variables" checkbox
-    updateVarChoiceIn()
-    updateVarChoiceOut()
-    updateTrainSlider()
     
     # clear trained networks
     server.env$crt.fits <- list()
@@ -168,28 +172,24 @@ shinyServer(function(input, output, session) {
   
   ##############################################################################
   ## Training tab
-    
-  # Update in and out variable list
-  updateVarChoiceIn <- function() observe({
+  
+  # File upload updates variable choice list and size of training sample
+  observe({
+    if (is.null(input$file1)) return(NULL)
+
+    updateSelectInput(session, "varchoiceout",
+                      choices= as.list(colnames(current.all.data)))    
     updateSelectInput(session, "varchoicein",
                       choices= as.list(colnames(current.all.data)))
-  })
-  updateVarChoiceOut <- function() observe({
-    updateSelectInput(session, "varchoiceout",
-                      choices= as.list(colnames(current.all.data)))
-  })
-  
-  
-  # Update trainSlider
-  updateTrainSlider <- function() {
+    
     output$ntrain <- renderUI(numericInput(inputId= "ntrain", 
-                                             label= "Number of training samples:", 
-                                             min= 1, step= 1,
-                                             max= nrow(current.all.data),
-                                             value= round(.8*nrow(current.all.data),
-                                                          0)))
-  }
-      
+                                           label= "Number of training samples:", 
+                                           min= 1, step= 1,
+                                           max= nrow(current.all.data),
+                                           value= round(.8*nrow(current.all.data),
+                                                        0)))
+  })
+  
   # Adapt choice of activations to choice of model
   observe({
     updateSelectInput(session, "activhid", 
@@ -271,14 +271,13 @@ shinyServer(function(input, output, session) {
     
     tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
                            noms.out= input$varchoiceout, 
-                           hidden= tmp.hidden,
                            niter= input$maxit, 
                            activ.hid= input$activhid, 
                            activ.out= input$activout,
                            rand.seed= input$randseed, train= tmp.train, 
                            test= tmp.test, regul= input$regul,
-                           ncommit= input$ncommittee, algo= input$algo)
-    
+                           ncommit= input$ncommittee, algo= input$algo,
+                           hidden= tmp.hidden)
     
     # predict
     tmp.pred <- matrix(0, ncol= length(input$varchoiceout),
@@ -315,7 +314,9 @@ shinyServer(function(input, output, session) {
            ncommittee= input$ncommittee,
            activhid= input$activhid,
            activout= input$activout,
-           randseed= input$randseed)
+           randseed= input$randseed,
+           hidden= tmp.hidden,
+           maxit= input$maxit)
     }
     names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "-", input$algo)
     
