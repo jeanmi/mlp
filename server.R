@@ -263,11 +263,6 @@ shinyServer(function(input, output, session) {
     # save net
     server.env$current.net <- tmp.net
     
-    # Update variables
-    updateVarDiagno()
-    updateVarPred() 
-    updateVarDer()
-    
     # Save net into fits list
     server.env$crt.n.fits <- crt.n.fits + 1
     server.env$crt.fits[[crt.n.fits]] <- {
@@ -291,6 +286,16 @@ shinyServer(function(input, output, session) {
     # Update models list on the left
     updateSelectInput(session, "fit", choices= rev(names(crt.fits)))
     
+    # Update training message
+    output$trainMessage <- renderPrint({
+      cat("Training successful. (Name:", names(crt.fits)[crt.n.fits], ")")
+    })
+    
+    # Update variables
+    updateVarDiagno()
+    updateVarPred() 
+    updateVarDer()
+    
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
   }})
@@ -305,7 +310,7 @@ shinyServer(function(input, output, session) {
       return(cat("Choose at least one input and one output variable."))
     if (length(crt.fits) == 0) 
       return(cat("Hit the Train button to train the neural network."))
-    cat("Training successful.")
+    cat("Training successful. (Name:", names(crt.fits)[crt.n.fits], ")")
   })
   
   # Summary of the SOM
