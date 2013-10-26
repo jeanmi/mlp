@@ -47,6 +47,7 @@ predictTheNet <- function(net, newdata, algo, noms.in) {
 }
 
 ## partial derivatives function for one-hidden layer net
+# TODO : speed up
 partialDer <- function(input, matA, matB, index.in, index.out, 
                        activHid, activOut, standard.in, standard.out) {
   if (activHid == "logistic") {
@@ -68,7 +69,7 @@ partialDer <- function(input, matA, matB, index.in, index.out,
   inputO <- as.matrix(cbind(1, matH)) %*% matB
   derO <- actOutDer(inputO)
   
-  res <- as.matrix(derO * rowSums(derH %*% diag(matA[index.in + 1, ] * matB[-1,index.out]) ))
+  res <- as.matrix(derO[, index.out] * rowSums(derH %*% diag(matA[index.in + 1, ] * matB[-1, index.out]) ))
   (standard.out/standard.in) * res
 }
 
@@ -139,10 +140,17 @@ shinyServer(function(input, output, session) {
     } else the.table <- read.table(in.file$datapath, header=input$header, 
                                    sep=input$sep, quote=input$quote, dec=input$dec)
     
-    # update the "input variables" checkbox (if somtype is numeric or integer)
+    # update the "input variables" checkbox
     updateVarChoiceIn()
     updateVarChoiceOut()
     updateTrainSlider()
+    
+    # clear trained networks
+    server.env$crt.fits <- list()
+    server.env$crt.n.fits <- 0
+    server.env$chosen.fit <- NULL
+    updateSelectInput(session, "fit", choices= "(No trained networks)")
+    
     
     server.env$current.all.data <- the.table
     the.table
@@ -314,12 +322,6 @@ shinyServer(function(input, output, session) {
     # Update models list on the left
     updateSelectInput(session, "fit", choices= rev(names(crt.fits)))
     
-    # Update training message
-    output$trainMessage <- renderPrint({
-      cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
-          "You may train another neural network to compare results.")
-    })
-    
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
   }})
@@ -333,7 +335,7 @@ shinyServer(function(input, output, session) {
     input$trainbutton
     if(is.null(input$varchoicein) | is.null(input$varchoiceout)) 
       return(cat("Choose at least one input and one output variable."))
-    if (length(crt.fits) == 0) 
+    if (crt.n.fits == 0) 
       return(cat("Hit the Train button to train the neural network."))
     cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
         "You may train another neural network to compare results.")
@@ -633,23 +635,23 @@ shinyServer(function(input, output, session) {
         tmp.der <- NULL
         if (chosen.fit$algo == "mlp") {
           tmp.der <- computeDer(chosen.fit$algo, 
-                                i_varin, 
+                                NULL, 
                                 i_varout, 
                                 chosen.fit$ncommittee, 
                                 chosen.fit$activhid, 
                                 chosen.fit$activout)
         } else {
           for (i_varin in chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
-                                                  chosen.fit$datnamesin])
+                                                  chosen.fit$datnamesin]){
             tmp.der <- cbind(tmp.der, computeDer(chosen.fit$algo, 
                                                  i_varin, 
                                                  i_varout, 
                                                  chosen.fit$ncommittee, 
                                                  chosen.fit$activhid, 
                                                  chosen.fit$activout))
+          }
           tmp.der <- as.matrix(tmp.der)
-          colnames(tmp.der) <- chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
-                                                       chosen.fit$datnamesin]
+          colnames(tmp.der) <- chosen.fit$matnamesin[chosen.fit$matnamesin %in% chosen.fit$datnamesin]
         }
         server.env$chosen.fit$der[[i_varout]] <- tmp.der
         server.env$crt.fits[[input$fit]]$der[[i_varout]] <- tmp.der

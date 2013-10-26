@@ -43,7 +43,6 @@ shinyUI(pageWithSidebar(
       ),
 
       tabPanel("Train Net",
-               h3("Second step: train the net"),
                selectInput("algo", "Type of net :", 
                            choices= c("mlp", "elm", "nnet")),
                actionButton("trainbutton","Train"),
