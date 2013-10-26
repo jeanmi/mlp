@@ -259,7 +259,7 @@ shinyServer(function(input, output, session) {
       tmp.hidden <- c(input$nhid1, input$nhid2, 
                       input$nhid3, 
                       input$nhid4)[1:input$nhidlay]
-    } else tmp.hidden <- input$nhid
+    } else tmp.hidden <- input$nhid1
     
     tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
                            noms.out= input$varchoiceout, 
@@ -316,7 +316,8 @@ shinyServer(function(input, output, session) {
     
     # Update training message
     output$trainMessage <- renderPrint({
-      cat("Training successful. (Name:", names(crt.fits)[crt.n.fits], ")")
+      cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
+          "You may train another neural network to compare results.")
     })
     
     # Update train button counter
@@ -334,7 +335,8 @@ shinyServer(function(input, output, session) {
       return(cat("Choose at least one input and one output variable."))
     if (length(crt.fits) == 0) 
       return(cat("Hit the Train button to train the neural network."))
-    cat("Training successful. (Name:", names(crt.fits)[crt.n.fits], ")")
+    cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
+        "You may train another neural network to compare results.")
   })
   
   
