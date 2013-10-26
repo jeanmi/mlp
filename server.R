@@ -83,16 +83,16 @@ shinyServer(function(input, output, session) {
   crt.der.clicks <- 0 # number of times der button was clicked
   crt.fits <- list() # list of trained nets
   crt.n.fits <- 0 # number of trained nets
-  chosen.fit <- NULL # current net, taken from crt.fits
+  active.fit <- NULL # current net, taken from crt.fits
   
   ##############################################################################
   ## Left panel
   
-  # Store current fit in chosen.fit
+  # Store current fit in active.fit
   observe({
     input$fit # (fit selector is updated at the end of each training)
     if(crt.n.fits == 0) return(NULL)
-    server.env$chosen.fit <- crt.fits[[input$fit]]
+    server.env$active.fit <- crt.fits[[input$fit]]
   })
   
   # Summary of current fit
@@ -101,20 +101,20 @@ shinyServer(function(input, output, session) {
     if(crt.n.fits == 0) return(NULL)
     
     cat(input$trainbutton, crt.train.clicks,
-        if (nrow(current.all.data) != nrow(chosen.fit$data)) {
-          paste("Warning:", nrow(current.all.data) - nrow(chosen.fit$data), 
+        if (nrow(current.all.data) != nrow(active.fit$data)) {
+          paste("Warning:", nrow(current.all.data) - nrow(active.fit$data), 
                 "observations removed because of NA values.\n")
         } else {""},
         paste("Train MSE:", 
-              mean((chosen.fit$pred[chosen.fit$train,]-
-                      as.matrix(chosen.fit$data[chosen.fit$train,
-                                             chosen.fit$namesout]))**2)),'\n',
+              mean((active.fit$pred[active.fit$train,]-
+                      as.matrix(active.fit$data[active.fit$train,
+                                             active.fit$namesout]))**2)),'\n',
         paste("Test MSE:", 
-              mean((chosen.fit$pred[chosen.fit$test,]-
-                      as.matrix(chosen.fit$data[chosen.fit$test, chosen.fit$namesout]))**2)), '\n',
+              mean((active.fit$pred[active.fit$test,]-
+                      as.matrix(active.fit$data[active.fit$test, active.fit$namesout]))**2)), '\n',
         paste("Committee members training errors\n", 
-              paste(sapply(chosen.fit$net, 
-                           function(x) switch(chosen.fit$algo,
+              paste(sapply(active.fit$net, 
+                           function(x) switch(active.fit$algo,
                                               "mlp"= x$MSE_final,
                                               "elm"= mean(x$residuals**2),
                                               "nnet"= mean(x$residuals**2))),
@@ -148,7 +148,7 @@ shinyServer(function(input, output, session) {
     # clear trained networks
     server.env$crt.fits <- list()
     server.env$crt.n.fits <- 0
-    server.env$chosen.fit <- NULL
+    server.env$active.fit <- NULL
     updateSelectInput(session, "fit", choices= "(No trained networks)")
     
     
@@ -351,13 +351,13 @@ shinyServer(function(input, output, session) {
     input$fit
     
     updateSelectInput(session, "diagvarchoiceout",
-                      choices= chosen.fit$namesout,
-                      selected= if (input$diagvarchoiceout %in% chosen.fit$namesout) {
+                      choices= active.fit$namesout,
+                      selected= if (input$diagvarchoiceout %in% active.fit$namesout) {
                         input$diagvarchoiceout
                       } else 1)
     updateSelectInput(session, "diagvarchoicein",
-                      choices= chosen.fit$datnamesin,
-                      selected= if (input$diagvarchoicein %in% chosen.fit$datnamesin) {
+                      choices= active.fit$datnamesin,
+                      selected= if (input$diagvarchoicein %in% active.fit$datnamesin) {
                         input$diagvarchoicein
                       } else 1)
   })
@@ -371,46 +371,46 @@ shinyServer(function(input, output, session) {
     output$diagMessage <- renderText("")
     
     tmp.sample <- switch(input$diagsample,
-                         "training"= chosen.fit$train, 
-                         "test"= chosen.fit$test,
-                         "whole"= c(chosen.fit$train, chosen.fit$test))
+                         "training"= active.fit$train, 
+                         "test"= active.fit$test,
+                         "whole"= c(active.fit$train, active.fit$test))
     switch(input$diagplottype, 
            "trainerr"= {
-             if (chosen.fit$algo != "mlp") {
+             if (active.fit$algo != "mlp") {
                output$diagMessage <- 
                  renderText("Plot only available for 'mlp' fits.")
                return(NULL)
              } else output$diagMessage <- renderText("")
-             plot(chosen.fit$net[[1]]$evol_err, 
-                  ylim= range(c(chosen.fit$net[[1]]$evol_err, 
-                                chosen.fit$net[[1]]$evol_test)),
+             plot(active.fit$net[[1]]$evol_err, 
+                  ylim= range(c(active.fit$net[[1]]$evol_err, 
+                                active.fit$net[[1]]$evol_test)),
                   xlab= "iteration", ylab= "training error")
-             lines(chosen.fit$net[[1]]$evol_test, t="p", col= 2)
+             lines(active.fit$net[[1]]$evol_test, t="p", col= 2)
              legend("topright", col= 1:2, pch= c(1,1), 
                     c("Training sample error", "Test sample error"))
            },
            "actfit"= {
-             plot(chosen.fit$pred[tmp.sample, 
-                               if(ncol(chosen.fit$pred) == 1) {1} else 
-                                 which(chosen.fit$namesout == 
+             plot(active.fit$pred[tmp.sample, 
+                               if(ncol(active.fit$pred) == 1) {1} else 
+                                 which(active.fit$namesout == 
                                          input$diagvarchoiceout)],
-                  chosen.fit$data[tmp.sample, input$diagvarchoiceout],
+                  active.fit$data[tmp.sample, input$diagvarchoiceout],
                   xlab= paste("predicted", input$diagvarchoiceout),
                   ylab= paste("observed", input$diagvarchoiceout))
              abline(0,1,col=2,lwd=2,lty=2)
              legend("topleft", col= 2, lwd= 2, lty= 2, "y = x")
            },
            "residfit"= {
-             tmp.resid <- chosen.fit$data[tmp.sample, input$diagvarchoiceout] -
-               chosen.fit$pred[tmp.sample, 
-                               if(ncol(chosen.fit$pred) == 1) {1} else 
-                                 which(chosen.fit$namesout == 
+             tmp.resid <- active.fit$data[tmp.sample, input$diagvarchoiceout] -
+               active.fit$pred[tmp.sample, 
+                               if(ncol(active.fit$pred) == 1) {1} else 
+                                 which(active.fit$namesout == 
                                          input$diagvarchoiceout)]
                                
-             plot(chosen.fit$pred[tmp.sample, 
-                               if(ncol(chosen.fit$pred) == 1) {1} else 
-                                 (1:ncol(chosen.fit$pred))[
-                                   chosen.fit$namesout == 
+             plot(active.fit$pred[tmp.sample, 
+                               if(ncol(active.fit$pred) == 1) {1} else 
+                                 (1:ncol(active.fit$pred))[
+                                   active.fit$namesout == 
                                      input$diagvarchoiceout]],
                   tmp.resid,
                   xlab= paste("predicted", input$diagvarchoiceout),
@@ -424,12 +424,12 @@ shinyServer(function(input, output, session) {
              legend("bottom", col=2,lwd=2,lty=2, "error = 0")
            },
            "residinput"= {
-             tmp.resid <- chosen.fit$data[tmp.sample, input$diagvarchoiceout] -
-               chosen.fit$pred[tmp.sample, 
-                            if(ncol(chosen.fit$pred) == 1) {1} else 
-                              which(chosen.fit$namesout == 
+             tmp.resid <- active.fit$data[tmp.sample, input$diagvarchoiceout] -
+               active.fit$pred[tmp.sample, 
+                            if(ncol(active.fit$pred) == 1) {1} else 
+                              which(active.fit$namesout == 
                                       input$diagvarchoiceout)]
-             plot(chosen.fit$data[tmp.sample, input$diagvarchoicein], 
+             plot(active.fit$data[tmp.sample, input$diagvarchoicein], 
                   tmp.resid,
                   xlab= paste("observed", input$diagvarchoicein),
                   ylab= paste("prediction error for", input$diagvarchoiceout),
@@ -443,10 +443,10 @@ shinyServer(function(input, output, session) {
              legend("bottom", lty= 2, lwd= 2, col= 2, "error = 0")
            },
            "errdistr"= {
-             tmp.resid <- chosen.fit$data[tmp.sample, input$diagvarchoiceout] -
-               chosen.fit$pred[tmp.sample, 
-                            if(ncol(chosen.fit$pred) == 1) {1} else 
-                              which(chosen.fit$namesout == 
+             tmp.resid <- active.fit$data[tmp.sample, input$diagvarchoiceout] -
+               active.fit$pred[tmp.sample, 
+                            if(ncol(active.fit$pred) == 1) {1} else 
+                              which(active.fit$namesout == 
                                       input$predvarchoiceout)]
              plot(density(tmp.resid, bw= "SJ"),
                   xlab= paste("prediction error for", input$diagvarchoiceout),
@@ -466,13 +466,13 @@ shinyServer(function(input, output, session) {
   updateVarPred <- reactive({
     input$fit
     updateSelectInput(session, "predvarchoicein",
-                      choices= chosen.fit$datnamesin,
-                      selected= if (input$predvarchoicein %in% chosen.fit$datnamesin) {
+                      choices= active.fit$datnamesin,
+                      selected= if (input$predvarchoicein %in% active.fit$datnamesin) {
                         input$predvarchoicein
                       } else 1)
     updateSelectInput(session, "predvarchoiceout",
-                      choices= chosen.fit$namesout,
-                      selected= if (input$predvarchoiceout %in% chosen.fit$namesout) {
+                      choices= active.fit$namesout,
+                      selected= if (input$predvarchoiceout %in% active.fit$namesout) {
                         input$predvarchoiceout
                       } else 1)
   })
@@ -484,16 +484,16 @@ shinyServer(function(input, output, session) {
     updateVarPred()
     
     tmp.sample <- switch(input$predsample,
-                         "training"= chosen.fit$train, 
-                         "test"= chosen.fit$test,
-                         "whole"= c(chosen.fit$train, chosen.fit$test))
-    tmp.tab <- data.frame(chosen.fit$data[tmp.sample, input$predvarchoicein],
-                          chosen.fit$pred[tmp.sample, if(ncol(chosen.fit$pred) == 1) {1} else 
-                            (1:ncol(chosen.fit$pred))[chosen.fit$namesout == input$predvarchoiceout]])
+                         "training"= active.fit$train, 
+                         "test"= active.fit$test,
+                         "whole"= c(active.fit$train, active.fit$test))
+    tmp.tab <- data.frame(active.fit$data[tmp.sample, input$predvarchoicein],
+                          active.fit$pred[tmp.sample, if(ncol(active.fit$pred) == 1) {1} else 
+                            (1:ncol(active.fit$pred))[active.fit$namesout == input$predvarchoiceout]])
     plot(tmp.tab, 
          xlab= input$predvarchoicein, 
          ylab= input$predvarchoiceout,
-         ylim= range(chosen.fit$data[tmp.sample, input$predvarchoiceout]))
+         ylim= range(active.fit$data[tmp.sample, input$predvarchoiceout]))
 
     if (input$predsmooth) {
       tmp.lowess <- lowess(x= tmp.tab[, 1], y= tmp.tab[, 2], 
@@ -503,12 +503,12 @@ shinyServer(function(input, output, session) {
             col= 2, lwd= 2)
     }
     if(input$predshowobs == TRUE) {
-      lines(chosen.fit$data[tmp.sample, c(input$predvarchoicein, 
+      lines(active.fit$data[tmp.sample, c(input$predvarchoicein, 
                                           input$predvarchoiceout)],
             col= 3, pch= 2, t= "p")
       if (input$predsmooth) {
-        tmp.lowess <- lowess(x= chosen.fit$data[tmp.sample, input$predvarchoicein],
-                             y= chosen.fit$data[tmp.sample, input$predvarchoiceout],
+        tmp.lowess <- lowess(x= active.fit$data[tmp.sample, input$predvarchoicein],
+                             y= active.fit$data[tmp.sample, input$predvarchoiceout],
                              f= ifelse(input$predLowessAlpha > 0, 
                                           input$predLowessAlpha, 1e-4))
         lines(cbind(tmp.lowess$x, tmp.lowess$y)[order(tmp.lowess$x),], 
@@ -523,10 +523,10 @@ shinyServer(function(input, output, session) {
       paste("mlp_pred_",format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
     }, 
                     content= function(file) {
-                      write.csv(chosen.fit$pred, file= file, 
+                      write.csv(active.fit$pred, file= file, 
                                 row.names= rownames(current.all.data)[rownames(current.all.data)
-                                                                      %in% rownames(chosen.fit$data)],
-                                col.names= chosen.fit$namesout)
+                                                                      %in% rownames(active.fit$data)],
+                                col.names= active.fit$namesout)
                     })
   }
   
@@ -538,21 +538,21 @@ shinyServer(function(input, output, session) {
   updateVarDer <- reactive({
     input$fit
     updateSelectInput(session, "dervarchoicein",
-                      choices= chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
-                                                       chosen.fit$datnamesin],
+                      choices= active.fit$matnamesin[active.fit$matnamesin %in% 
+                                                       active.fit$datnamesin],
                       selected= if (input$dervarchoicein %in% 
-                                      chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
-                                                              chosen.fit$datnamesin]) {
+                                      active.fit$matnamesin[active.fit$matnamesin %in% 
+                                                              active.fit$datnamesin]) {
                         input$dervarchoicein
                       } else 1)
     updateSelectInput(session, "dervarchoiceout",
-                      choices= chosen.fit$namesout,
-                      selected= if (input$dervarchoiceout %in% chosen.fit$namesout) {
+                      choices= active.fit$namesout,
+                      selected= if (input$dervarchoiceout %in% active.fit$namesout) {
                         input$dervarchoiceout
                       } else 1)
     updateSelectInput(session, "dervarchoice2order",
-                      choices= chosen.fit$datnamesin,
-                      selected= if (input$dervarchoice2order %in% chosen.fit$datnamesin) {
+                      choices= active.fit$datnamesin,
+                      selected= if (input$dervarchoice2order %in% active.fit$datnamesin) {
                         input$dervarchoice2order
                       } else 1)
   })
@@ -564,57 +564,57 @@ shinyServer(function(input, output, session) {
       tmp.der <- 0
       for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
-          FNetPartial(le_net= chosen.fit$net[[i_commi2]], 
-                      data_in= chosen.fit$matrix,
-                      id_var= if(ncol(chosen.fit$pred) == 1) {0} else 
-                        (1:length(chosen.fit$namesout))[
-                          chosen.fit$namesout ==
+          FNetPartial(le_net= active.fit$net[[i_commi2]], 
+                      data_in= active.fit$matrix,
+                      id_var= if(ncol(active.fit$pred) == 1) {0} else 
+                        (1:length(active.fit$namesout))[
+                          active.fit$namesout ==
                             dervarchoiceout] - 1) / 
           ncommittee
         
       }
-      for (i_var in chosen.fit$matnamesin)
+      for (i_var in active.fit$matnamesin)
         tmp.der[, i_var] <- tmp.der[, i_var] * 2 * 
-        (chosen.fit$varout.sd[which(chosen.fit$namesout == dervarchoiceout)] / 
-           (chosen.fit$varin.range[2, i_var] - chosen.fit$varin.range[1, i_var]))
+        (active.fit$varout.sd[which(active.fit$namesout == dervarchoiceout)] / 
+           (active.fit$varin.range[2, i_var] - active.fit$varin.range[1, i_var]))
     } else if (algo == "nnet") {
       tmp.der <- 0
-      matASubset= 1:(chosen.fit$net[[1]]$n[2] * (1 + chosen.fit$net[[1]]$n[1]))
-      matBSubset= (1 + chosen.fit$net[[1]]$n[2] * (1 + chosen.fit$net[[1]]$n[1])):
-        length(chosen.fit$net[[1]]$wts)
+      matASubset= 1:(active.fit$net[[1]]$n[2] * (1 + active.fit$net[[1]]$n[1]))
+      matBSubset= (1 + active.fit$net[[1]]$n[2] * (1 + active.fit$net[[1]]$n[1])):
+        length(active.fit$net[[1]]$wts)
       for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
-          partialDer(input= chosen.fit$matrix[, chosen.fit$matnamesin], 
-                     matA= matrix(chosen.fit$net[[i_commi2]]$wts[matASubset],
-                                  ncol= chosen.fit$net[[i_commi2]]$n[2]),
-                     matB= matrix(chosen.fit$net[[i_commi2]]$wts[matBSubset],
-                                  ncol= chosen.fit$net[[i_commi2]]$n[3]),
-                     index.in= which(chosen.fit$matnamesin == 
+          partialDer(input= active.fit$matrix[, active.fit$matnamesin], 
+                     matA= matrix(active.fit$net[[i_commi2]]$wts[matASubset],
+                                  ncol= active.fit$net[[i_commi2]]$n[2]),
+                     matB= matrix(active.fit$net[[i_commi2]]$wts[matBSubset],
+                                  ncol= active.fit$net[[i_commi2]]$n[3]),
+                     index.in= which(active.fit$matnamesin == 
                                        dervarchoicein),
-                     index.out= which(chosen.fit$namesout ==
+                     index.out= which(active.fit$namesout ==
                                         dervarchoiceout),
                      activHid= input$activhid,
                      activOut= input$activout,
-                     standard.in= (chosen.fit$varin.range[2, dervarchoicein] - 
-                                                   chosen.fit$varin.range[1, dervarchoicein]) / 2,
-                     standard.out= chosen.fit$varout.sd[which(chosen.fit$namesout == dervarchoiceout)]) / 
+                     standard.in= (active.fit$varin.range[2, dervarchoicein] - 
+                                                   active.fit$varin.range[1, dervarchoicein]) / 2,
+                     standard.out= active.fit$varout.sd[which(active.fit$namesout == dervarchoiceout)]) / 
           ncommittee
       }
     } else if (algo == "elm") {
       tmp.der <- 0
       for (i_commi in 1:ncommittee) {
         tmp.der <- tmp.der + 
-          partialDer(input= chosen.fit$matrix[, chosen.fit$matnamesin], 
-                     matA= as.matrix(rbind(chosen.fit$net[[i_commi]]$biashid, 
-                                           t(chosen.fit$net[[i_commi]]$inpweight))),
-                     matB= rbind(0, chosen.fit$net[[i_commi]]$outweight),
-                     index.in= which(chosen.fit$matnamesin == dervarchoicein),
-                     index.out= which(chosen.fit$namesout == dervarchoiceout),
+          partialDer(input= active.fit$matrix[, active.fit$matnamesin], 
+                     matA= as.matrix(rbind(active.fit$net[[i_commi]]$biashid, 
+                                           t(active.fit$net[[i_commi]]$inpweight))),
+                     matB= rbind(0, active.fit$net[[i_commi]]$outweight),
+                     index.in= which(active.fit$matnamesin == dervarchoicein),
+                     index.out= which(active.fit$namesout == dervarchoiceout),
                      activHid= input$activhid,
                      activOut= input$activout,
-                     standard.in= (chosen.fit$varin.range[2, dervarchoicein] - 
-                                     chosen.fit$varin.range[1, dervarchoicein]) / 2,
-                     standard.out= chosen.fit$varout.sd[which(chosen.fit$namesout == dervarchoiceout)]) / 
+                     standard.in= (active.fit$varin.range[2, dervarchoicein] - 
+                                     active.fit$varin.range[1, dervarchoicein]) / 2,
+                     standard.out= active.fit$varout.sd[which(active.fit$namesout == dervarchoiceout)]) / 
           ncommittee
       }
     }
@@ -626,34 +626,34 @@ shinyServer(function(input, output, session) {
     input$fit
     if (crt.n.fits == 0) return(NULL)
     input$derbutton
-    if (!is.null(chosen.fit$der)) {
+    if (!is.null(active.fit$der)) {
       server.env$crt.der.clicks <- input$derbutton
       return(NULL)
     }
     if (input$derbutton > crt.der.clicks) {
-      for (i_varout in chosen.fit$namesout) {
+      for (i_varout in active.fit$namesout) {
         tmp.der <- NULL
-        if (chosen.fit$algo == "mlp") {
-          tmp.der <- computeDer(chosen.fit$algo, 
+        if (active.fit$algo == "mlp") {
+          tmp.der <- computeDer(active.fit$algo, 
                                 NULL, 
                                 i_varout, 
-                                chosen.fit$ncommittee, 
-                                chosen.fit$activhid, 
-                                chosen.fit$activout)
+                                active.fit$ncommittee, 
+                                active.fit$activhid, 
+                                active.fit$activout)
         } else {
-          for (i_varin in chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
-                                                  chosen.fit$datnamesin]){
-            tmp.der <- cbind(tmp.der, computeDer(chosen.fit$algo, 
+          for (i_varin in active.fit$matnamesin[active.fit$matnamesin %in% 
+                                                  active.fit$datnamesin]){
+            tmp.der <- cbind(tmp.der, computeDer(active.fit$algo, 
                                                  i_varin, 
                                                  i_varout, 
-                                                 chosen.fit$ncommittee, 
-                                                 chosen.fit$activhid, 
-                                                 chosen.fit$activout))
+                                                 active.fit$ncommittee, 
+                                                 active.fit$activhid, 
+                                                 active.fit$activout))
           }
           tmp.der <- as.matrix(tmp.der)
-          colnames(tmp.der) <- chosen.fit$matnamesin[chosen.fit$matnamesin %in% chosen.fit$datnamesin]
+          colnames(tmp.der) <- active.fit$matnamesin[active.fit$matnamesin %in% active.fit$datnamesin]
         }
-        server.env$chosen.fit$der[[i_varout]] <- tmp.der
+        server.env$active.fit$der[[i_varout]] <- tmp.der
         server.env$crt.fits[[input$fit]]$der[[i_varout]] <- tmp.der
       }
       server.env$crt.der.clicks <- input$derbutton
@@ -666,7 +666,7 @@ shinyServer(function(input, output, session) {
     if (crt.n.fits == 0) return(cat("First train a net."))
     updateVarDer()
     input$derbutton
-    if (is.null(chosen.fit$der)) 
+    if (is.null(active.fit$der)) 
       return(cat("Click compute button to predict derivatives."))
     
     cat("Partial derivatives of fit [", input$fit, "] successfully computed.")
@@ -678,26 +678,26 @@ shinyServer(function(input, output, session) {
     input$fit
     if (crt.n.fits == 0) return(NULL)
     input$derbutton
-    if (is.null(chosen.fit$der)) return(NULL)
+    if (is.null(active.fit$der)) return(NULL)
     
     tmp.sample <- switch(input$dersample,
-                         "training"= chosen.fit$train, 
-                         "test"= chosen.fit$test,
-                         "whole"= c(chosen.fit$train, chosen.fit$test))
+                         "training"= active.fit$train, 
+                         "test"= active.fit$test,
+                         "whole"= c(active.fit$train, active.fit$test))
     
     tmp.varin <- ifelse(input$der2order, 
                         input$dervarchoice2order,
                         input$dervarchoicein)
     
-    plot(chosen.fit$data[tmp.sample, tmp.varin],
-         chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
+    plot(active.fit$data[tmp.sample, tmp.varin],
+         active.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
          xlab= tmp.varin, 
          ylab= paste("partial (", input$dervarchoiceout, "/", input$dervarchoicein,")"),
-         ylim= range(c(0, chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein])))
+         ylim= range(c(0, active.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein])))
     
     if (input$dersmooth) {
-      tmp.lowess <- lowess(x= chosen.fit$data[tmp.sample, tmp.varin], 
-                           y= chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
+      tmp.lowess <- lowess(x= active.fit$data[tmp.sample, tmp.varin], 
+                           y= active.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
                            f= ifelse(input$derLowessAlpha > 0, 
                                      input$derLowessAlpha, 1e-4))
       lines(cbind(tmp.lowess$x, tmp.lowess$y)[order(tmp.lowess$x), ], 
@@ -710,13 +710,13 @@ shinyServer(function(input, output, session) {
   
 #   # Download derivatives
 #   output$derdownload <- downloadHandler(filename= function() {
-#     paste("mlp_der_", chosen.fit$der.varout, "_",
+#     paste("mlp_der_", active.fit$der.varout, "_",
 #           format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
 #   }, content= function(file) {
-#     write.csv(chosen.fit$der, file= file, 
+#     write.csv(active.fit$der, file= file, 
 #               row.names= rownames(current.all.data)[rownames(current.all.data)
-#                                                     %in% rownames(chosen.fit$data)],
-#               col.names= chosen.fit$matnamesin)
+#                                                     %in% rownames(active.fit$data)],
+#               col.names= active.fit$matnamesin)
 #   })
 })
 
