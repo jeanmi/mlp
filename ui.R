@@ -4,7 +4,13 @@ shinyUI(pageWithSidebar(
   headerPanel("MLP"),
   
   sidebarPanel(p(HTML("Free Online Multilayer Perceptron <br /> 
-                      (alpha version)"))),
+                      (alpha version)")),
+               conditionalPanel("input.trainbutton > 0",
+                                selectInput("fit",
+                                            "Trained networks", 
+                                            choices= "(No trained networks)"),
+                                verbatimTextOutput("summary"))
+               ),
 
   mainPanel(
     tabsetPanel(
@@ -41,7 +47,7 @@ shinyUI(pageWithSidebar(
                selectInput("algo", "Type of net :", 
                            choices= c("mlp", "elm", "nnet")),
                actionButton("trainbutton","Train"),
-               verbatimTextOutput("summary"),
+               verbatimTextOutput("trainMessage"),
                br(),
                h4("Options"),
                numericInput("ncommittee", "Number of neural networks in the

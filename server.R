@@ -176,6 +176,13 @@ shinyServer(function(input, output, session) {
   
   # Train the net when the button is hit
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
+    dInput()
+    if(is.null(current.all.data) |
+         is.null(input$varchoicein) | is.null(input$varchoiceout)) {  
+      server.env$crt.train.clicks <- input$trainbutton
+      return(NULL)
+    }
+    
     # remove from working data the obs where input or output are NA
     server.env$current.data <- server.env$current.all.data[
       rowSums(is.na(current.all.data[,c(input$varchoicein, 
@@ -254,9 +261,24 @@ shinyServer(function(input, output, session) {
     
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
+    warning("trained")
+    warning(i_commi)
   }})
   
-  # Render the summary of the SOM
+  # Training message
+  output$trainMessage <- renderPrint({
+    dInput()
+    if (is.null(input$file1))
+      return(cat("First import a dataset."))
+    input$trainbutton
+    if(is.null(input$varchoicein) | is.null(input$varchoiceout)) 
+      return(cat("Choose at least one input and one output variable."))
+    if (is.null(current.net)) 
+      return(cat("Hit the Train button to train the neural network."))
+    cat("Training successful.")
+  })
+  
+  # Summary of the SOM
   output$summary <- renderPrint({ 
     dInput()
     if (is.null(input$file1))
@@ -265,8 +287,7 @@ shinyServer(function(input, output, session) {
     if (is.null(current.net)) 
       return("Hit the Train button to train the neural network.")
     
-    isolate({
-      cat(input$trainbutton, crt.train.clicks,
+    cat(input$trainbutton, crt.train.clicks,
         if (nrow(current.all.data) != nrow(current.data)) {
           paste("Warning:", nrow(current.all.data) - nrow(current.data), 
                 "observations removed because of NA values.\n")
@@ -284,8 +305,7 @@ shinyServer(function(input, output, session) {
                                               "elm"= mean(x$residuals**2),
                                               "nnet"= mean(x$residuals**2))),
                     collapse= " "))
-      )
-    })
+    )
     
   })
   
