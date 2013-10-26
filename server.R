@@ -293,8 +293,6 @@ shinyServer(function(input, output, session) {
     
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
-    warning("trained")
-    warning(i_commi)
   }})
   
   # Training message
@@ -305,7 +303,7 @@ shinyServer(function(input, output, session) {
     input$trainbutton
     if(is.null(input$varchoicein) | is.null(input$varchoiceout)) 
       return(cat("Choose at least one input and one output variable."))
-    if (is.null(current.net)) 
+    if (length(crt.fits) == 0) 
       return(cat("Hit the Train button to train the neural network."))
     cat("Training successful.")
   })
@@ -316,23 +314,26 @@ shinyServer(function(input, output, session) {
     if (is.null(input$file1))
       return("First import a dataset.")
     input$trainbutton
-    if (is.null(current.net)) 
+    if (length(crt.fits) == 0) 
       return("Hit the Train button to train the neural network.")
     
+    tmp.fit <- crt.fits[[input$fit]]
+    
     cat(input$trainbutton, crt.train.clicks,
-        if (nrow(current.all.data) != nrow(current.data)) {
-          paste("Warning:", nrow(current.all.data) - nrow(current.data), 
+        if (nrow(current.all.data) != nrow(tmp.fit$data)) {
+          paste("Warning:", nrow(current.all.data) - nrow(tmp.fit$data), 
                 "observations removed because of NA values.\n")
         } else {""},
         paste("Train MSE:", 
-              mean((current.pred[current.train,]-
-                      as.matrix(current.data[current.train, input$varchoiceout]))**2)),'\n',
+              mean((tmp.fit$pred[tmp.fit$train,]-
+                      as.matrix(tmp.fit$data[tmp.fit$train,
+                                             tmp.fit$namesout]))**2)),'\n',
         paste("Test MSE:", 
-              mean((current.pred[current.test,]-
-                      as.matrix(current.data[current.test, input$varchoiceout]))**2)), '\n',
+              mean((tmp.fit$pred[tmp.fit$test,]-
+                      as.matrix(tmp.fit$data[tmp.fit$test, tmp.fit$namesout]))**2)), '\n',
         paste("Committee members training errors\n", 
-              paste(sapply(current.net, 
-                           function(x) switch(input$algo,
+              paste(sapply(tmp.fit$net, 
+                           function(x) switch(tmp.fit$algo,
                                               "mlp"= x$MSE_final,
                                               "elm"= mean(x$residuals**2),
                                               "nnet"= mean(x$residuals**2))),
