@@ -490,17 +490,26 @@ shinyServer(function(input, output, session) {
          xlab= input$predvarchoicein, 
          ylab= input$predvarchoiceout,
          ylim= range(chosen.fit$data[tmp.sample, input$predvarchoiceout]))
-    if (input$predspline)
-      lines(smooth.spline(tmp.tab, cv=  TRUE), col= 2, lwd= 2)
+
+    if (input$predsmooth) {
+      tmp.lowess <- lowess(x= tmp.tab[, 1], y= tmp.tab[, 2], 
+                           f= ifelse(input$predLowessAlpha > 0, 
+                                     input$predLowessAlpha, 1e-4))
+      lines(cbind(tmp.lowess$x, tmp.lowess$y)[order(tmp.lowess$x),], 
+            col= 2, lwd= 2)
+    }
     if(input$predshowobs == TRUE) {
       lines(chosen.fit$data[tmp.sample, c(input$predvarchoicein, 
-                                       input$predvarchoiceout)],
+                                          input$predvarchoiceout)],
             col= 3, pch= 2, t= "p")
-      if (input$predspline)
-        lines(smooth.spline(chosen.fit$data[tmp.sample, 
-                                         c(input$predvarchoicein,
-                                           input$predvarchoiceout)], cv= TRUE),
-              lty=2, col= 4, lwd= 2)
+      if (input$predsmooth) {
+        tmp.lowess <- lowess(x= chosen.fit$data[tmp.sample, input$predvarchoicein],
+                             y= chosen.fit$data[tmp.sample, input$predvarchoiceout],
+                             f= ifelse(input$predLowessAlpha > 0, 
+                                          input$predLowessAlpha, 1e-4))
+        lines(cbind(tmp.lowess$x, tmp.lowess$y)[order(tmp.lowess$x),], 
+              col= 4, lwd= 2)
+      }
     }
   })
   
@@ -682,11 +691,13 @@ shinyServer(function(input, output, session) {
          ylab= paste("partial (", input$dervarchoiceout, "/", input$dervarchoicein,")"),
          ylim= range(c(0, chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein])))
     
-    if (input$derspline) {
-      tmp.spline= smooth.spline(x= chosen.fit$data[tmp.sample, tmp.varin], 
-                                y= chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
-                                cv=  TRUE)
-      lines(tmp.spline$x, tmp.spline$y, col= 2, lwd= 2)
+    if (input$dersmooth) {
+      tmp.lowess <- lowess(x= chosen.fit$data[tmp.sample, tmp.varin], 
+                           y= chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
+                           f= ifelse(input$derLowessAlpha > 0, 
+                                     input$derLowessAlpha, 1e-4))
+      lines(cbind(tmp.lowess$x, tmp.lowess$y)[order(tmp.lowess$x), ], 
+            col= 2, lwd= 2)
     }
     
     abline(h=0, col= 4)
