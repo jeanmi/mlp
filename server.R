@@ -78,32 +78,54 @@ shinyServer(function(input, output, session) {
   # server environment variables
   server.env <- environment() # used to allocate in functions
   current.all.data <- NULL # with na
-  crt.train.clicks <- 0
-  crt.der.clicks <- 0
-  crt.fits <- list()
-  crt.n.fits <- 0
+  crt.train.clicks <- 0 # number of times train button was clicked
+  crt.der.clicks <- 0 # number of times der button was clicked
+  crt.fits <- list() # list of trained nets
+  crt.n.fits <- 0 # number of trained nets
+  chosen.fit <- NULL # current net, taken from crt.fits
   
-  current.net <- NULL # this variable will contain the current net
-  current.data <- NULL # without the na of input and output variables
-  current.train <- NULL
-  current.test <- NULL
-  current.matrix <- NULL
-  current.pred <- NULL
+  ##############################################################################
+  ## Left panel
   
-  current.der <- NULL
-  current.der.varin <- NULL
-  current.der.varout <- NULL
+  # Store current fit in chosen.fit
+  observe({
+    input$fit # (fit selector is updated at the end of each training)
+    if(crt.n.fits == 0) return(NULL)
+    server.env$chosen.fit <- crt.fits[[input$fit]]
+  })
+  
+  # Summary of current fit
+  output$summary <- renderPrint({ 
+    input$fit
+    if(crt.n.fits == 0) return(NULL)
     
-  current.matnamesin <- NULL
-  current.datnamesin <- NULL
-  current.namesout <- NULL
+    cat(input$trainbutton, crt.train.clicks,
+        if (nrow(current.all.data) != nrow(chosen.fit$data)) {
+          paste("Warning:", nrow(current.all.data) - nrow(chosen.fit$data), 
+                "observations removed because of NA values.\n")
+        } else {""},
+        paste("Train MSE:", 
+              mean((chosen.fit$pred[chosen.fit$train,]-
+                      as.matrix(chosen.fit$data[chosen.fit$train,
+                                             chosen.fit$namesout]))**2)),'\n',
+        paste("Test MSE:", 
+              mean((chosen.fit$pred[chosen.fit$test,]-
+                      as.matrix(chosen.fit$data[chosen.fit$test, chosen.fit$namesout]))**2)), '\n',
+        paste("Committee members training errors\n", 
+              paste(sapply(chosen.fit$net, 
+                           function(x) switch(chosen.fit$algo,
+                                              "mlp"= x$MSE_final,
+                                              "elm"= mean(x$residuals**2),
+                                              "nnet"= mean(x$residuals**2))),
+                    collapse= " "))
+    )
+    
+  })
   
-  crt.varin.range <- NULL
-  crt.varout.mean <- NULL
-  crt.varout.sd <- NULL
   
+  ##############################################################################
+  ## File input tab
   
-  # File input
   dInput <- reactive({
     in.file <- input$file1
     
@@ -135,6 +157,9 @@ shinyServer(function(input, output, session) {
       d.input <- d.input[,1:input$ncol.preview]
     head(d.input, n=input$nrow.preview) 
   })
+  
+  ##############################################################################
+  ## Training tab
     
   # Update in and out variable list
   updateVarChoiceIn <- function() observe({
@@ -211,8 +236,8 @@ shinyServer(function(input, output, session) {
     server.env$current.datnamesin <- tmp.datnamesin
     server.env$current.namesout <- tmp.namesout
     
-    # normalize
-    tmp.varin.range <- sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesin]), FUN= range)
+    # normalize (TODO : fix problem when only one input)
+    tmp.varin.range <- as.matrix(sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesin]), FUN= range))
     server.env$crt.varin.range <- tmp.varin.range
     for (i_var in tmp.matnamesin)
       tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - tmp.varin.range[1, i_var] ) /
@@ -279,7 +304,10 @@ shinyServer(function(input, output, session) {
            varout.mean= tmp.varout.mean,
            varout.sd= tmp.varout.sd,
            algo= input$algo,
-           ncommittee= input$ncommittee)
+           ncommittee= input$ncommittee,
+           activhid= input$activhid,
+           activout= input$activout,
+           randseed= input$randseed)
     }
     names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "-", input$algo)
     
@@ -291,17 +319,13 @@ shinyServer(function(input, output, session) {
       cat("Training successful. (Name:", names(crt.fits)[crt.n.fits], ")")
     })
     
-    # Update variables
-    updateVarDiagno()
-    updateVarPred() 
-    updateVarDer()
-    
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
   }})
   
   # Training message
   output$trainMessage <- renderPrint({
+    input$fit # (fit selector is updated at the end of each training)
     dInput()
     if (is.null(input$file1))
       return(cat("First import a dataset."))
@@ -313,111 +337,77 @@ shinyServer(function(input, output, session) {
     cat("Training successful. (Name:", names(crt.fits)[crt.n.fits], ")")
   })
   
-  # Summary of the SOM
-  output$summary <- renderPrint({ 
-    dInput()
-    if (is.null(input$file1))
-      return("First import a dataset.")
-    input$trainbutton
-    if (length(crt.fits) == 0) 
-      return("Hit the Train button to train the neural network.")
-    
-    tmp.fit <- crt.fits[[input$fit]]
-    
-    cat(input$trainbutton, crt.train.clicks,
-        if (nrow(current.all.data) != nrow(tmp.fit$data)) {
-          paste("Warning:", nrow(current.all.data) - nrow(tmp.fit$data), 
-                "observations removed because of NA values.\n")
-        } else {""},
-        paste("Train MSE:", 
-              mean((tmp.fit$pred[tmp.fit$train,]-
-                      as.matrix(tmp.fit$data[tmp.fit$train,
-                                             tmp.fit$namesout]))**2)),'\n',
-        paste("Test MSE:", 
-              mean((tmp.fit$pred[tmp.fit$test,]-
-                      as.matrix(tmp.fit$data[tmp.fit$test, tmp.fit$namesout]))**2)), '\n',
-        paste("Committee members training errors\n", 
-              paste(sapply(tmp.fit$net, 
-                           function(x) switch(tmp.fit$algo,
-                                              "mlp"= x$MSE_final,
-                                              "elm"= mean(x$residuals**2),
-                                              "nnet"= mean(x$residuals**2))),
-                    collapse= " "))
-    )
-    
-  })
   
   ##############################################################################
   ## Diagnostics
     
-  updateVarDiagno <- function() {
+  # update available variables and plots in diagnostics
+  # TODO : update available plots with all.diag.plots list
+  updateDiagOptions= reactive({
+    input$fit
+    
     updateSelectInput(session, "diagvarchoiceout",
-                      choices= if (ncol(current.pred) == 1) {
-                        colnames(current.matrix)[1]
-                      } else current.namesout)
+                      choices= chosen.fit$namesout,
+                      selected= if (input$diagvarchoiceout %in% chosen.fit$namesout) {
+                        input$diagvarchoiceout
+                      } else 1)
     updateSelectInput(session, "diagvarchoicein",
-                      choices= current.datnamesin)
-  }
-  
-  # update available plots in diagnostics
-  observe({
-    updateSelectInput(session, "diagplottype", 
-                      choices= switch(input$algo, 
-                                      "mlp"= list("Training error"= "trainerr",
-                                                  "Actual vs Fitted"= "actfit",
-                                                  "Error distribution"= "errdistr",
-                                                  "Residual vs Fitted"= "residfit",
-                                                  "Residual vs Predictor"= "residinput"),
-                                      list("Actual vs Fitted"= "actfit",
-                                           "Error distribution"= "errdistr",
-                                           "Residual vs Fitted"= "residfit",
-                                           "Residual vs Predictor"= "residinput")))
+                      choices= chosen.fit$datnamesin,
+                      selected= if (input$diagvarchoicein %in% chosen.fit$datnamesin) {
+                        input$diagvarchoicein
+                      } else 1)
   })
   
   # Diagnostics plot
   output$diagplot <- renderPlot({
-    input$trainbutton
-    if(is.null(current.net))
-      return(NULL)
+    input$fit
+    if (crt.n.fits == 0) return(NULL)
+
+    updateDiagOptions()
+    output$diagMessage <- renderText("")
     
     tmp.sample <- switch(input$diagsample,
-                         "training"= current.train, 
-                         "test"= current.test,
-                         "whole"= c(current.train, current.test))
+                         "training"= chosen.fit$train, 
+                         "test"= chosen.fit$test,
+                         "whole"= c(chosen.fit$train, chosen.fit$test))
     switch(input$diagplottype, 
            "trainerr"= {
-             plot(current.net[[1]]$evol_err, ylim= range(c(current.net[[1]]$evol_err, 
-                                                           current.net[[1]]$evol_test)),
+             if (chosen.fit$algo != "mlp") {
+               output$diagMessage <- 
+                 renderText("Plot only available for 'mlp' fits.")
+               return(NULL)
+             } else output$diagMessage <- renderText("")
+             plot(chosen.fit$net[[1]]$evol_err, 
+                  ylim= range(c(chosen.fit$net[[1]]$evol_err, 
+                                chosen.fit$net[[1]]$evol_test)),
                   xlab= "iteration", ylab= "training error")
-             lines(current.net[[1]]$evol_test, t="p", col= 2)
+             lines(chosen.fit$net[[1]]$evol_test, t="p", col= 2)
              legend("topright", col= 1:2, pch= c(1,1), 
                     c("Training sample error", "Test sample error"))
            },
            "actfit"= {
-             plot(current.pred[tmp.sample, 
-                               if(ncol(current.pred) == 1) {1} else 
-                                 (1:ncol(current.pred))[
-                                   current.namesout == 
-                                     input$predvarchoiceout]],
-                  current.data[tmp.sample, input$diagvarchoiceout],
+             plot(chosen.fit$pred[tmp.sample, 
+                               if(ncol(chosen.fit$pred) == 1) {1} else 
+                                 which(chosen.fit$namesout == 
+                                         input$diagvarchoiceout)],
+                  chosen.fit$data[tmp.sample, input$diagvarchoiceout],
                   xlab= paste("predicted", input$diagvarchoiceout),
                   ylab= paste("observed", input$diagvarchoiceout))
              abline(0,1,col=2,lwd=2,lty=2)
              legend("topleft", col= 2, lwd= 2, lty= 2, "y = x")
            },
            "residfit"= {
-             tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
-               current.pred[tmp.sample, 
-                            if(ncol(current.pred) == 1) {1} else 
-                              (1:ncol(current.pred))[
-                                current.namesout == 
-                                  input$predvarchoiceout]]
-             
-             plot(current.pred[tmp.sample, 
-                               if(ncol(current.pred) == 1) {1} else 
-                                 (1:ncol(current.pred))[
-                                   current.namesout == 
-                                     input$predvarchoiceout]],
+             tmp.resid <- chosen.fit$data[tmp.sample, input$diagvarchoiceout] -
+               chosen.fit$pred[tmp.sample, 
+                               if(ncol(chosen.fit$pred) == 1) {1} else 
+                                 which(chosen.fit$namesout == 
+                                         input$diagvarchoiceout)]
+                               
+             plot(chosen.fit$pred[tmp.sample, 
+                               if(ncol(chosen.fit$pred) == 1) {1} else 
+                                 (1:ncol(chosen.fit$pred))[
+                                   chosen.fit$namesout == 
+                                     input$diagvarchoiceout]],
                   tmp.resid,
                   xlab= paste("predicted", input$diagvarchoiceout),
                   ylab= paste("prediction error for", input$diagvarchoiceout),
@@ -430,13 +420,12 @@ shinyServer(function(input, output, session) {
              legend("bottom", col=2,lwd=2,lty=2, "error = 0")
            },
            "residinput"= {
-             tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
-               current.pred[tmp.sample, 
-                            if(ncol(current.pred) == 1) {1} else 
-                              (1:ncol(current.pred))[
-                                current.namesout == 
-                                  input$predvarchoiceout]]
-             plot(current.data[tmp.sample, input$diagvarchoicein], 
+             tmp.resid <- chosen.fit$data[tmp.sample, input$diagvarchoiceout] -
+               chosen.fit$pred[tmp.sample, 
+                            if(ncol(chosen.fit$pred) == 1) {1} else 
+                              which(chosen.fit$namesout == 
+                                      input$diagvarchoiceout)]
+             plot(chosen.fit$data[tmp.sample, input$diagvarchoicein], 
                   tmp.resid,
                   xlab= paste("observed", input$diagvarchoicein),
                   ylab= paste("prediction error for", input$diagvarchoiceout),
@@ -450,12 +439,11 @@ shinyServer(function(input, output, session) {
              legend("bottom", lty= 2, lwd= 2, col= 2, "error = 0")
            },
            "errdistr"= {
-             tmp.resid <- current.data[tmp.sample, input$diagvarchoiceout] -
-               current.pred[tmp.sample, 
-                            if(ncol(current.pred) == 1) {1} else 
-                              (1:ncol(current.pred))[
-                                current.namesout == 
-                                  input$predvarchoiceout]]
+             tmp.resid <- chosen.fit$data[tmp.sample, input$diagvarchoiceout] -
+               chosen.fit$pred[tmp.sample, 
+                            if(ncol(chosen.fit$pred) == 1) {1} else 
+                              which(chosen.fit$namesout == 
+                                      input$predvarchoiceout)]
              plot(density(tmp.resid, bw= "SJ"),
                   xlab= paste("prediction error for", input$diagvarchoiceout),
                   ylab= paste("density"), main= "prediction error density")
@@ -471,39 +459,45 @@ shinyServer(function(input, output, session) {
   ##############################################################################
   ## Prediction
   
-  updateVarPred <- function() {
+  updateVarPred <- reactive({
+    input$fit
     updateSelectInput(session, "predvarchoicein",
-                      choices= input$varchoicein)
+                      choices= chosen.fit$datnamesin,
+                      selected= if (input$predvarchoicein %in% chosen.fit$datnamesin) {
+                        input$predvarchoicein
+                      } else 1)
     updateSelectInput(session, "predvarchoiceout",
-                      choices= if (ncol(current.pred) == 1) {
-                        colnames(current.matrix)[1]
-                      } else current.namesout)
-  }
+                      choices= chosen.fit$namesout,
+                      selected= if (input$predvarchoiceout %in% chosen.fit$namesout) {
+                        input$predvarchoiceout
+                      } else 1)
+  })
   
   # plot predictions
   output$predplot <- renderPlot({
-    input$trainbutton
-    if (is.null(current.net)) return(NULL)
+    input$fit
+    if (crt.n.fits == 0) return(NULL)
+    updateVarPred()
     
     tmp.sample <- switch(input$predsample,
-                         "training"= current.train, 
-                         "test"= current.test,
-                         "whole"= c(current.train, current.test))
-    tmp.tab <- data.frame(current.data[tmp.sample, input$predvarchoicein],
-                          current.pred[tmp.sample, if(ncol(current.pred) == 1) {1} else 
-                            (1:ncol(current.pred))[current.namesout == input$predvarchoiceout]])
+                         "training"= chosen.fit$train, 
+                         "test"= chosen.fit$test,
+                         "whole"= c(chosen.fit$train, chosen.fit$test))
+    tmp.tab <- data.frame(chosen.fit$data[tmp.sample, input$predvarchoicein],
+                          chosen.fit$pred[tmp.sample, if(ncol(chosen.fit$pred) == 1) {1} else 
+                            (1:ncol(chosen.fit$pred))[chosen.fit$namesout == input$predvarchoiceout]])
     plot(tmp.tab, 
          xlab= input$predvarchoicein, 
          ylab= input$predvarchoiceout,
-         ylim= range(current.data[tmp.sample, input$predvarchoiceout]))
+         ylim= range(chosen.fit$data[tmp.sample, input$predvarchoiceout]))
     if (input$predspline)
       lines(smooth.spline(tmp.tab, cv=  TRUE), col= 2, lwd= 2)
     if(input$predshowobs == TRUE) {
-      lines(current.data[tmp.sample, c(input$predvarchoicein, 
+      lines(chosen.fit$data[tmp.sample, c(input$predvarchoicein, 
                                        input$predvarchoiceout)],
             col= 3, pch= 2, t= "p")
       if (input$predspline)
-        lines(smooth.spline(current.data[tmp.sample, 
+        lines(smooth.spline(chosen.fit$data[tmp.sample, 
                                          c(input$predvarchoicein,
                                            input$predvarchoiceout)], cv= TRUE),
               lty=2, col= 4, lwd= 2)
@@ -516,95 +510,98 @@ shinyServer(function(input, output, session) {
       paste("mlp_pred_",format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
     }, 
                     content= function(file) {
-                      write.csv(current.pred, file= file, 
+                      write.csv(chosen.fit$pred, file= file, 
                                 row.names= rownames(current.all.data)[rownames(current.all.data)
-                                                                      %in% rownames(current.data)],
-                                col.names= input$varchoiceout)
+                                                                      %in% rownames(chosen.fit$data)],
+                                col.names= chosen.fit$namesout)
                     })
   }
   
   
   ##############################################################################
   ## Partial derivatives
+  # TODO : categorical inputs
   
-  updateVarDer <- function() {
+  updateVarDer <- reactive({
+    input$fit
     updateSelectInput(session, "dervarchoicein",
-                      choices= input$varchoicein)
+                      choices= chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
+                                                       chosen.fit$datnamesin],
+                      selected= if (input$dervarchoicein %in% 
+                                      chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
+                                                              chosen.fit$datnamesin]) {
+                        input$dervarchoicein
+                      } else 1)
     updateSelectInput(session, "dervarchoiceout",
-                      choices= if (ncol(current.pred) == 1) {
-                        colnames(current.matrix)[1]
-                      } else current.namesout)
+                      choices= chosen.fit$namesout,
+                      selected= if (input$dervarchoiceout %in% chosen.fit$namesout) {
+                        input$dervarchoiceout
+                      } else 1)
     updateSelectInput(session, "dervarchoice2order",
-                      choices= input$varchoicein)
-    
-  }
+                      choices= chosen.fit$datnamesin,
+                      selected= if (input$dervarchoice2order %in% chosen.fit$datnamesin) {
+                        input$dervarchoice2order
+                      } else 1)
+  })
   
-  # compute derivatives
-  computeDer <- function(algo, dersample, 
-                         dervarchoicein, dervarchoiceout, ncommittee,
+  # launch derivatives function
+  computeDer <- function(algo, dervarchoicein, dervarchoiceout, ncommittee,
                          activhid, activout) {
-    
-    tmp.sample <- switch(dersample,
-                         "training"= current.train, 
-                         "test"= current.test,
-                         "whole"= c(current.train, current.test))
-    
-    if (algo == "mlp") {
+    if (algo == "mlp") { #  all input variables at once with FNetPartial
       tmp.der <- 0
       for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
-          FNetPartial(le_net= current.net[[i_commi2]], 
-                      data_in= current.matrix[tmp.sample, ],
-                      id_var= if(ncol(current.pred) == 1) {0} else 
-                        (1:length(current.namesout))[
-                          current.namesout ==
+          FNetPartial(le_net= chosen.fit$net[[i_commi2]], 
+                      data_in= chosen.fit$matrix,
+                      id_var= if(ncol(chosen.fit$pred) == 1) {0} else 
+                        (1:length(chosen.fit$namesout))[
+                          chosen.fit$namesout ==
                             dervarchoiceout] - 1) / 
           ncommittee
         
       }
-      tmp.der <- tmp.der * 2 * (crt.varout.sd[which(current.namesout == dervarchoiceout)] / 
-                                      (crt.varin.range[2, dervarchoicein] - 
-                                         crt.varin.range[1, dervarchoicein]))
+      for (i_var in chosen.fit$matnamesin)
+        tmp.der[, i_var] <- tmp.der[, i_var] * 2 * 
+        (chosen.fit$varout.sd[which(chosen.fit$namesout == dervarchoiceout)] / 
+           (chosen.fit$varin.range[2, i_var] - chosen.fit$varin.range[1, i_var]))
     } else if (algo == "nnet") {
       tmp.der <- 0
-      matASubset= 1:(current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1]))
-      matBSubset= (1 + current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1])):
-        length(current.net[[1]]$wts)
+      matASubset= 1:(chosen.fit$net[[1]]$n[2] * (1 + chosen.fit$net[[1]]$n[1]))
+      matBSubset= (1 + chosen.fit$net[[1]]$n[2] * (1 + chosen.fit$net[[1]]$n[1])):
+        length(chosen.fit$net[[1]]$wts)
       for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
-          partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
-                     matA= matrix(current.net[[i_commi2]]$wts[matASubset],
-                                  ncol= current.net[[i_commi2]]$n[2]),
-                     matB= matrix(current.net[[i_commi2]]$wts[matBSubset],
-                                  ncol= current.net[[i_commi2]]$n[3]),
-                     index.in= which(current.matnamesin == 
+          partialDer(input= chosen.fit$matrix[, chosen.fit$matnamesin], 
+                     matA= matrix(chosen.fit$net[[i_commi2]]$wts[matASubset],
+                                  ncol= chosen.fit$net[[i_commi2]]$n[2]),
+                     matB= matrix(chosen.fit$net[[i_commi2]]$wts[matBSubset],
+                                  ncol= chosen.fit$net[[i_commi2]]$n[3]),
+                     index.in= which(chosen.fit$matnamesin == 
                                        dervarchoicein),
-                     index.out= which(current.namesout ==
+                     index.out= which(chosen.fit$namesout ==
                                         dervarchoiceout),
                      activHid= input$activhid,
                      activOut= input$activout,
-                     standard.in= (crt.varin.range[2, dervarchoicein] - 
-                                                   crt.varin.range[1, dervarchoicein]) / 2,
-                     standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
+                     standard.in= (chosen.fit$varin.range[2, dervarchoicein] - 
+                                                   chosen.fit$varin.range[1, dervarchoicein]) / 2,
+                     standard.out= chosen.fit$varout.sd[which(chosen.fit$namesout == dervarchoiceout)]) / 
           ncommittee
       }
     } else if (algo == "elm") {
       tmp.der <- 0
       for (i_commi in 1:ncommittee) {
         tmp.der <- tmp.der + 
-          partialDer(input= current.matrix[tmp.sample, current.matnamesin], 
-                     matA= as.matrix(rbind(current.net[[i_commi]]$biashid, 
-                                           t(current.net[[i_commi]]$inpweight))),
-                     matB= rbind(0, current.net[[i_commi]]$outweight),
-                     index.in= which(current.matnamesin == 
-                                       dervarchoicein),
-                     index.out= which(current.namesout ==
-                                        dervarchoiceout),
+          partialDer(input= chosen.fit$matrix[, chosen.fit$matnamesin], 
+                     matA= as.matrix(rbind(chosen.fit$net[[i_commi]]$biashid, 
+                                           t(chosen.fit$net[[i_commi]]$inpweight))),
+                     matB= rbind(0, chosen.fit$net[[i_commi]]$outweight),
+                     index.in= which(chosen.fit$matnamesin == dervarchoicein),
+                     index.out= which(chosen.fit$namesout == dervarchoiceout),
                      activHid= input$activhid,
                      activOut= input$activout,
-                     standard.in= (crt.varin.range[2, dervarchoicein] - 
-                                     crt.varin.range[1, dervarchoicein]) / 2,
-                     standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
+                     standard.in= (chosen.fit$varin.range[2, dervarchoicein] - 
+                                     chosen.fit$varin.range[1, dervarchoicein]) / 2,
+                     standard.out= chosen.fit$varout.sd[which(chosen.fit$namesout == dervarchoiceout)]) / 
           ncommittee
       }
     }
@@ -613,86 +610,99 @@ shinyServer(function(input, output, session) {
   
   # compute derivatives when button is hit
   observe({
-    input$trainbutton
-    if (is.null(current.net)) return(NULL)
+    input$fit
+    if (crt.n.fits == 0) return(NULL)
     input$derbutton
+    if (!is.null(chosen.fit$der)) {
+      server.env$crt.der.clicks <- input$derbutton
+      return(NULL)
+    }
     if (input$derbutton > crt.der.clicks) {
-      if (input$algo == "nnet" & input$activhid != "logistic") 
-        stop("Hidden activation must be logistic")
-      if (input$algo == "nnet" & input$activout != "identity") 
-        stop("Hidden activation must be identity")
-      
-      server.env$current.der <- computeDer(input$algo, input$dersample, 
-                                           input$dervarchoicein, 
-                                           input$dervarchoiceout, 
-                                           input$ncommittee, 
-                                           input$activhid, 
-                                           input$activout)
-      server.env$current.der.varin <- input$dervarchoicein
-      server.env$current.der.varout <- input$dervarchoiceout
-      crt.der.clicks <- input$derbutton
+      for (i_varout in chosen.fit$namesout) {
+        tmp.der <- NULL
+        if (chosen.fit$algo == "mlp") {
+          tmp.der <- computeDer(chosen.fit$algo, 
+                                i_varin, 
+                                i_varout, 
+                                chosen.fit$ncommittee, 
+                                chosen.fit$activhid, 
+                                chosen.fit$activout)
+        } else {
+          for (i_varin in chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
+                                                  chosen.fit$datnamesin])
+            tmp.der <- cbind(tmp.der, computeDer(chosen.fit$algo, 
+                                                 i_varin, 
+                                                 i_varout, 
+                                                 chosen.fit$ncommittee, 
+                                                 chosen.fit$activhid, 
+                                                 chosen.fit$activout))
+          tmp.der <- as.matrix(tmp.der)
+          colnames(tmp.der) <- chosen.fit$matnamesin[chosen.fit$matnamesin %in% 
+                                                       chosen.fit$datnamesin]
+        }
+        server.env$chosen.fit$der[[i_varout]] <- tmp.der
+        server.env$crt.fits[[input$fit]]$der[[i_varout]] <- tmp.der
+      }
+      server.env$crt.der.clicks <- input$derbutton
     }
   })
   
-  # current derivative 
+  # message about state of derivatives
   output$dertext <- renderPrint({
-    input$trainbutton
-    if (is.null(current.net)) return("First train net.")
+    input$fit
+    if (crt.n.fits == 0) return(cat("First train a net."))
+    updateVarDer()
     input$derbutton
-    if (is.null(current.der)) 
-      return("Click predict button to predict derivatives.")
+    if (is.null(chosen.fit$der)) 
+      return(cat("Click compute button to predict derivatives."))
     
-    cat("Current : partial derivative of", current.der.varout,
-        "with respect to", current.der.varin,
-        "\n(click predict button to change variables)")
+    cat("Partial derivatives of fit [", input$fit, "] successfully computed.")
     
   })
   
   # plot derivatives
   output$derplot <- renderPlot({
-    input$trainbutton
-    if (is.null(current.net)) return(NULL)
+    input$fit
+    if (crt.n.fits == 0) return(NULL)
     input$derbutton
-    if (is.null(current.der)) return(NULL)
+    if (is.null(chosen.fit$der)) return(NULL)
     
     tmp.sample <- switch(input$dersample,
-                         "training"= current.train, 
-                         "test"= current.test,
-                         "whole"= c(current.train, current.test))
+                         "training"= chosen.fit$train, 
+                         "test"= chosen.fit$test,
+                         "whole"= c(chosen.fit$train, chosen.fit$test))
     
-    if(!(current.der.varin %in% current.matnamesin))
-      stop("Input variable must be numeric.")
     tmp.varin <- ifelse(input$der2order, 
                         input$dervarchoice2order,
-                        current.der.varin)
-    if (input$algo == "mlp") {
-      tmp.tab <- cbind(current.data[tmp.sample, tmp.varin],
-                       current.der[, which(colnames(current.der) == 
-                                             current.der.varin)])
-    } else tmp.tab <- cbind(current.data[tmp.sample, tmp.varin], current.der)
+                        input$dervarchoicein)
     
-    plot(tmp.tab, 
+    plot(chosen.fit$data[tmp.sample, tmp.varin],
+         chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
          xlab= tmp.varin, 
-         ylab= paste("partial (",current.der.varout,"/",
-                     current.der.varin,")"),
-         ylim= range(c(0,tmp.tab[,2])))
-    tmp.spline= smooth.spline(tmp.tab, cv=  TRUE)
-    if (input$derspline)
+         ylab= paste("partial (", input$dervarchoiceout, "/", input$dervarchoicein,")"),
+         ylim= range(c(0, chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein])))
+    
+    if (input$derspline) {
+      tmp.spline= smooth.spline(x= chosen.fit$data[tmp.sample, tmp.varin], 
+                                y= chosen.fit$der[[input$dervarchoiceout]][tmp.sample, input$dervarchoicein],
+                                cv=  TRUE)
       lines(tmp.spline$x, tmp.spline$y, col= 2, lwd= 2)
+    }
+    
     abline(h=0, col= 4)
     legend("topleft", lty= 1, col= 4, "y=0")
   })
   
-  # Download derivatives
-  output$derdownload <- downloadHandler(filename= function() {
-    paste("mlp_der_", current.der.varout, "_",
-          format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
-  }, content= function(file) {
-    write.csv(current.der, file= file, 
-              row.names= rownames(current.all.data)[rownames(current.all.data)
-                                                    %in% rownames(current.data)],
-              col.names= current.matnamesin)
-  })
+#   # Download derivatives
+#   output$derdownload <- downloadHandler(filename= function() {
+#     paste("mlp_der_", chosen.fit$der.varout, "_",
+#           format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
+#   }, content= function(file) {
+#     write.csv(chosen.fit$der, file= file, 
+#               row.names= rownames(current.all.data)[rownames(current.all.data)
+#                                                     %in% rownames(chosen.fit$data)],
+#               col.names= chosen.fit$matnamesin)
+#   })
 })
 
 

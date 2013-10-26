@@ -122,6 +122,7 @@ shinyUI(pageWithSidebar(
                                 selectInput("diagvarchoicein", "Input variable", 
                                             choices= "(First train)")
                ),
+               textOutput("diagMessage"),
                plotOutput("diagplot")
                ),
       
@@ -139,7 +140,7 @@ shinyUI(pageWithSidebar(
                ),
       
       tabPanel("Partial derivatives",
-               actionButton("derbutton", "Predict"),
+               actionButton("derbutton", "Compute"),
                downloadButton("derdownload", "Download partial derivatives"),
                verbatimTextOutput("dertext"),
                selectInput("dersample", "Observations sample:",
