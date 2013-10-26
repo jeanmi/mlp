@@ -9,7 +9,7 @@ options(shiny.maxRequestSize= 30*1024^2)
 trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
                         activ.hid, activ.out, rand.seed, train, test, regul,
                         ncommittee, algo) {
-#  set.seed(rand.seed)
+    #  set.seed(rand.seed)
   res= NULL
   for (i_comm in 1:ncommittee) {
     if (algo == "mlp") {
@@ -34,7 +34,7 @@ trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
                             trace= FALSE)))
     }
   }
-    
+  
   res  
 }
 
@@ -64,7 +64,7 @@ partialDer <- function(input, matA, matB, index.in, index.out,
   inputH <- as.matrix(cbind(1, input)) %*% matA
   matH <- actHidFun(inputH)
   derH <- actHidDer(inputH)
-
+    
   inputO <- as.matrix(cbind(1, matH)) %*% matB
   derO <- actOutDer(inputO)
   
@@ -77,8 +77,13 @@ partialDer <- function(input, matA, matB, index.in, index.out,
 shinyServer(function(input, output, session) {
   # server environment variables
   server.env <- environment() # used to allocate in functions
-  current.net <- NULL # this variable will contain the current net
   current.all.data <- NULL # with na
+  crt.train.clicks <- 0
+  crt.der.clicks <- 0
+  crt.fits <- list()
+  crt.n.fits <- 0
+  
+  current.net <- NULL # this variable will contain the current net
   current.data <- NULL # without the na of input and output variables
   current.train <- NULL
   current.test <- NULL
@@ -88,7 +93,7 @@ shinyServer(function(input, output, session) {
   current.der <- NULL
   current.der.varin <- NULL
   current.der.varout <- NULL
-
+    
   current.matnamesin <- NULL
   current.datnamesin <- NULL
   current.namesout <- NULL
@@ -97,8 +102,6 @@ shinyServer(function(input, output, session) {
   crt.varout.mean <- NULL
   crt.varout.sd <- NULL
   
-  crt.train.clicks <- 0
-  crt.der.clicks <- 0
   
   # File input
   dInput <- reactive({
@@ -132,7 +135,7 @@ shinyServer(function(input, output, session) {
       d.input <- d.input[,1:input$ncol.preview]
     head(d.input, n=input$nrow.preview) 
   })
-
+    
   # Update in and out variable list
   updateVarChoiceIn <- function() observe({
     updateSelectInput(session, "varchoicein",
@@ -147,19 +150,13 @@ shinyServer(function(input, output, session) {
   # Update trainSlider
   updateTrainSlider <- function() {
     output$ntrain <- renderUI(numericInput(inputId= "ntrain", 
-                                         label= "Number of training samples:", 
-                                         min= 1, step= 1,
-                                         max= nrow(current.all.data),
-                                         value= round(.8*nrow(current.all.data),
-                                                      0)))
+                                             label= "Number of training samples:", 
+                                             min= 1, step= 1,
+                                             max= nrow(current.all.data),
+                                             value= round(.8*nrow(current.all.data),
+                                                          0)))
   }
-
-  # Update training sample
-  updateSamples <- function() {
-    server.env$current.train <- sample(1:nrow(current.data), size= input$ntrain)
-    server.env$current.test <- (1:nrow(current.data))[-current.train]
-  }
-  
+      
   # Adapt choice of activations to choice of model
   observe({
     updateSelectInput(session, "activhid", 
@@ -184,43 +181,54 @@ shinyServer(function(input, output, session) {
     }
     
     # remove from working data the obs where input or output are NA
-    server.env$current.data <- server.env$current.all.data[
+    tmp.data <- server.env$current.all.data[
       rowSums(is.na(current.all.data[,c(input$varchoicein, 
                                         input$varchoiceout)])) == 0, ]
+    server.env$current.data <- tmp.data
     
     set.seed(input$randseed)
-    updateSamples()
+    tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
+    tmp.test <- (1:nrow(tmp.data))[-tmp.train]
+    server.env$current.train <- tmp.train
+    server.env$current.test <- tmp.test
+
     tmp.matrix <- model.matrix(as.formula(object= paste("~ 0+", 
                                                         paste(input$varchoicein, 
                                                               collapse= "+") )),
-                               data= current.data)
+                               data= tmp.data)
     tmp.rownames <- rownames(tmp.matrix)
-    noms.in <- colnames(tmp.matrix)
-    tmp.matrix <- as.matrix(cbind(current.data[rownames(tmp.matrix),
+    tmp.matnamesin <- colnames(tmp.matrix)
+    tmp.datnamesin <- input$varchoicein
+    tmp.namesout <- input$varchoiceout
+    tmp.matrix <- as.matrix(cbind(tmp.data[rownames(tmp.matrix),
                                                input$varchoiceout], 
                                   tmp.matrix))
-    colnames(tmp.matrix) <- c(input$varchoiceout, noms.in)
+    colnames(tmp.matrix) <- c(tmp.namesout, tmp.matnamesin)
     rownames(tmp.matrix) <- tmp.rownames
     
     server.env$current.matrix <- tmp.matrix
-    server.env$current.matnamesin <- noms.in
-    server.env$current.datnamesin <- input$varchoicein
-    server.env$current.namesout <- input$varchoiceout
+    server.env$current.matnamesin <- tmp.matnamesin
+    server.env$current.datnamesin <- tmp.datnamesin
+    server.env$current.namesout <- tmp.namesout
     
     # normalize
-    server.env$crt.varin.range <- 
-      sapply(as.data.frame(tmp.matrix[current.train, noms.in]), FUN= range)
-    for (i_var in current.matnamesin)
-      tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - crt.varin.range[1, i_var] ) /
-                                    (crt.varin.range[2, i_var] - crt.varin.range[1, i_var]) ) - 1
-    server.env$crt.varout.mean <- 
-      sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= mean)
-    names(crt.varout.mean) <- current.namesout
-    server.env$crt.varout.sd <- 
-      sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= sd)
-    names(crt.varout.sd) <- current.namesout
-    if (input$activout != "softmax") for (i_var in current.namesout)
-      tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - crt.varout.mean[i_var]) / crt.varout.sd[i_var]
+    tmp.varin.range <- sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesin]), FUN= range)
+    server.env$crt.varin.range <- tmp.varin.range
+    for (i_var in tmp.matnamesin)
+      tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - tmp.varin.range[1, i_var] ) /
+                                    (tmp.varin.range[2, i_var] - tmp.varin.range[1, i_var]) ) - 1
+    
+    tmp.varout.mean <- 
+      sapply(as.data.frame(tmp.matrix[tmp.train, tmp.namesout]), FUN= mean)
+    names(tmp.varout.mean) <- tmp.namesout
+    server.env$crt.varout.mean <- tmp.varout.mean
+
+    tmp.varout.sd <- 
+      sapply(as.data.frame(tmp.matrix[tmp.train, tmp.namesout]), FUN= sd)
+    names(tmp.varout.sd) <- tmp.namesout
+    server.env$crt.varout.sd <- tmp.varout.sd
+    if (input$activout != "softmax") for (i_var in tmp.namesout)
+      tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - tmp.varout.mean[i_var]) / tmp.varout.sd[i_var]
     
     if (input$algo == "mlp") {
       tmp.hidden <- c(input$nhid1, input$nhid2, 
@@ -228,36 +236,60 @@ shinyServer(function(input, output, session) {
                       input$nhid4)[1:input$nhidlay]
     } else tmp.hidden <- input$nhid
     
-    tmp.net <- trainTheNet(tmp.matrix, noms.in= noms.in, 
+    tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
                            noms.out= input$varchoiceout, 
                            hidden= tmp.hidden,
                            niter= input$maxit, 
                            activ.hid= input$activhid, 
                            activ.out= input$activout,
-                           rand.seed= input$randseed, train= current.train, 
-                           test= current.test, regul= input$regul,
+                           rand.seed= input$randseed, train= tmp.train, 
+                           test= tmp.test, regul= input$regul,
                            ncommit= input$ncommittee, algo= input$algo)
     
     
     # predict
-    server.env$current.pred <- matrix(0, ncol= length(input$varchoiceout),
-                                      nrow= nrow(current.matrix))
+    tmp.pred <- matrix(0, ncol= length(input$varchoiceout),
+                                      nrow= nrow(tmp.matrix))
     for (i_commi in 1:input$ncommittee)
-      server.env$current.pred <- server.env$current.pred + predictTheNet(
+      tmp.pred <- tmp.pred + predictTheNet(
         net= tmp.net[[i_commi]], newdata= tmp.matrix, algo= input$algo, 
-        noms.in= current.matnamesin) / input$ncommittee
+        noms.in= tmp.matnamesin) / input$ncommittee
     
     # reverse normalization of prediction
-    if (input$activout != "softmax") for (i_var in 1:ncol(current.pred))
-      server.env$current.pred[, i_var] <- (server.env$current.pred[, i_var] * 
-                                             crt.varout.sd[i_var]) + crt.varout.mean[i_var]
+    if (input$activout != "softmax") for (i_var in 1:ncol(tmp.pred))
+      tmp.pred[, i_var] <- (tmp.pred[, i_var] * tmp.varout.sd[i_var]) + tmp.varout.mean[i_var]
+    server.env$current.pred <- tmp.pred
+    
     # save net
     server.env$current.net <- tmp.net
     
-    # Update variables and launch plots
+    # Update variables
     updateVarDiagno()
     updateVarPred() 
     updateVarDer()
+    
+    # Save net into fits list
+    server.env$crt.n.fits <- crt.n.fits + 1
+    server.env$crt.fits[[crt.n.fits]] <- {
+      list(net= tmp.net,
+           data= tmp.data, # not necessary?
+           train= tmp.train,
+           test= tmp.test,
+           matrix= tmp.matrix,
+           pred= tmp.pred,
+           matnamesin= tmp.matnamesin,
+           datnamesin= input$varchoicein,
+           namesout= input$varchoiceout,
+           varin.range= tmp.varin.range,
+           varout.mean= tmp.varout.mean,
+           varout.sd= tmp.varout.sd,
+           algo= input$algo,
+           ncommittee= input$ncommittee)
+    }
+    names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "-", input$algo)
+    
+    # Update models list on the left
+    updateSelectInput(session, "fit", choices= rev(names(crt.fits)))
     
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
@@ -311,7 +343,7 @@ shinyServer(function(input, output, session) {
   
   ##############################################################################
   ## Diagnostics
-
+    
   updateVarDiagno <- function() {
     updateSelectInput(session, "diagvarchoiceout",
                       choices= if (ncol(current.pred) == 1) {
@@ -436,10 +468,10 @@ shinyServer(function(input, output, session) {
   updateVarPred <- function() {
     updateSelectInput(session, "predvarchoicein",
                       choices= input$varchoicein)
-     updateSelectInput(session, "predvarchoiceout",
-                       choices= if (ncol(current.pred) == 1) {
-                         colnames(current.matrix)[1]
-                       } else current.namesout)
+    updateSelectInput(session, "predvarchoiceout",
+                      choices= if (ncol(current.pred) == 1) {
+                        colnames(current.matrix)[1]
+                      } else current.namesout)
   }
   
   # plot predictions
@@ -484,7 +516,7 @@ shinyServer(function(input, output, session) {
                                 col.names= input$varchoiceout)
                     })
   }
-    
+  
   
   ##############################################################################
   ## Partial derivatives
@@ -525,8 +557,8 @@ shinyServer(function(input, output, session) {
         
       }
       tmp.der <- tmp.der * 2 * (crt.varout.sd[which(current.namesout == dervarchoiceout)] / 
-                              (crt.varin.range[2, dervarchoicein] - 
-                                 crt.varin.range[1, dervarchoicein]))
+                                      (crt.varin.range[2, dervarchoicein] - 
+                                         crt.varin.range[1, dervarchoicein]))
     } else if (algo == "nnet") {
       tmp.der <- 0
       matASubset= 1:(current.net[[1]]$n[2] * (1 + current.net[[1]]$n[1]))
@@ -546,7 +578,7 @@ shinyServer(function(input, output, session) {
                      activHid= input$activhid,
                      activOut= input$activout,
                      standard.in= (crt.varin.range[2, dervarchoicein] - 
-                       crt.varin.range[1, dervarchoicein]) / 2,
+                                                   crt.varin.range[1, dervarchoicein]) / 2,
                      standard.out= crt.varout.sd[which(current.namesout == dervarchoiceout)]) / 
           ncommittee
       }
