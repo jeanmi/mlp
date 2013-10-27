@@ -264,13 +264,9 @@ shinyServer(function(input, output, session) {
     tmp.data <- server.env$current.all.data[
       rowSums(is.na(current.all.data[, tmp.selvars])) == 0, ]
                        
-    server.env$current.data <- tmp.data
-
     set.seed(input$randseed)
     tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
     tmp.test <- (1:nrow(tmp.data))[-tmp.train]
-    server.env$current.train <- tmp.train
-    server.env$current.test <- tmp.test
 
     tmp.matrix <- model.matrix(as.formula(object= paste("~ 0+", 
                                                         paste(tmp.varchoicein, 
@@ -285,11 +281,6 @@ shinyServer(function(input, output, session) {
                                   tmp.matrix))
     colnames(tmp.matrix) <- c(tmp.namesout, tmp.matnamesin)
     rownames(tmp.matrix) <- tmp.rownames
-    
-    server.env$current.matrix <- tmp.matrix
-    server.env$current.matnamesin <- tmp.matnamesin
-    server.env$current.datnamesin <- tmp.datnamesin
-    server.env$current.namesout <- tmp.namesout
     
     # normalize (TODO : fix problem when only one input)
     tmp.varin.range <- as.matrix(sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesin]), FUN= range))
@@ -337,10 +328,6 @@ shinyServer(function(input, output, session) {
     # reverse normalization of prediction
     if (input$activout != "softmax") for (i_var in 1:ncol(tmp.pred))
       tmp.pred[, i_var] <- (tmp.pred[, i_var] * tmp.varout.sd[i_var]) + tmp.varout.mean[i_var]
-    server.env$current.pred <- tmp.pred
-    
-    # save net
-    server.env$current.net <- tmp.net
     
     # Save net into fits list
     server.env$crt.n.fits <- crt.n.fits + 1
