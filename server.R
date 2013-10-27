@@ -283,8 +283,10 @@ shinyServer(function(input, output, session) {
     rownames(tmp.matrix) <- tmp.rownames
 
     # normalize (TODO : fix problem when only one input)
-    tmp.varin.range <- as.matrix(sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesin]), FUN= range))
-    server.env$crt.varin.range <- tmp.varin.range
+    tmp.varin.range <- sapply(as.data.frame(tmp.matrix[tmp.train, 
+                                                       tmp.matnamesin]), 
+                              FUN= range)
+    colnames(tmp.varin.range) <- tmp.matnamesin
     for (i_var in tmp.matnamesin)
       tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - tmp.varin.range[1, i_var] ) /
                                     (tmp.varin.range[2, i_var] - tmp.varin.range[1, i_var]) ) - 1
@@ -292,12 +294,10 @@ shinyServer(function(input, output, session) {
     tmp.varout.mean <- 
       sapply(as.data.frame(tmp.matrix[tmp.train, tmp.namesout]), FUN= mean)
     names(tmp.varout.mean) <- tmp.namesout
-    server.env$crt.varout.mean <- tmp.varout.mean
 
     tmp.varout.sd <- 
       sapply(as.data.frame(tmp.matrix[tmp.train, tmp.namesout]), FUN= sd)
     names(tmp.varout.sd) <- tmp.namesout
-    server.env$crt.varout.sd <- tmp.varout.sd
     if (input$activout != "softmax") for (i_var in tmp.namesout)
       tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - tmp.varout.mean[i_var]) / tmp.varout.sd[i_var]
     
