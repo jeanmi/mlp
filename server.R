@@ -127,7 +127,7 @@ shinyServer(function(input, output, session) {
         "\n",
         "Test sample MSE     :", mean((active.fit$pred[active.fit$test,]-
                                                as.matrix(active.fit$data[active.fit$test, active.fit$namesout]))**2),
-        "\n\n Output variable(s):", paste(active.fit$namesout, collapse= ", "),
+        "\n\n Output variable(s):", paste(active.fit$namesout, collapse= ", "), "\n",
         "\n Input variable(s):", paste(active.fit$matnamesin, collapse= ", "), "\n\n",
         "Training algorithm        :", active.fit$algo, '\n',
         "Number of networks        :", active.fit$ncommittee, '\n',
