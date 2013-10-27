@@ -73,6 +73,26 @@ partialDer <- function(input, matA, matB, index.in, index.out,
   (standard.out/standard.in) * res
 }
 
+# table of horizontal radiobuttons
+tableHorizRadio <- function(names, labels, choices) {
+  tmp.text <- "<TABLE cellpadding= 10> "
+  tmp.text <- paste(tmp.text, "<TD> </TD> <TD> <b>", 
+                    paste(choices, collapse= "</b> </TD> <TD> <b>"),
+                    '</TD>')
+  for (i_name in 1:length(names)){
+    tmp.line= paste("<TR> <TD> <b>", names[i_name], "</b> </TD>")
+    for (i_choice in 1:length(choices))
+      tmp.line <- paste(tmp.line, 
+                        paste('<TD><Input type = radio Name =',
+                              labels[i_name], ' Value =', 
+                              paste('"', choices[i_choice], '"', sep=""),
+                              if(i_choice == 1) 'checked', 
+                              '</TD>'))
+    tmp.text <- paste(tmp.text, tmp.line, "</TR>")
+  }
+  tmp.text <- paste(tmp.text, '</TD></TABLE>')
+  HTML(tmp.text)
+}
 
 # Server
 shinyServer(function(input, output, session) {
@@ -84,6 +104,7 @@ shinyServer(function(input, output, session) {
   crt.fits <- list() # list of trained nets
   crt.n.fits <- 0 # number of trained nets
   active.fit <- NULL # current net, taken from crt.fits
+  crt.var.types <- NULL # current chosen types of variables
   
   ##############################################################################
   ## Left panel
@@ -106,15 +127,18 @@ shinyServer(function(input, output, session) {
         "\n",
         "Test sample MSE     :", mean((active.fit$pred[active.fit$test,]-
                                                as.matrix(active.fit$data[active.fit$test, active.fit$namesout]))**2),
-        "\n\n Model :\n",
-        "(",paste(active.fit$namesout, collapse= ", "), ") = f(",
-        paste(active.fit$matnamesin, collapse= ", "), ")\n\n",
+        "\n\n Output variable(s):", paste(active.fit$namesout, collapse= ", "),
+        "\n Input variable(s):", paste(active.fit$matnamesin, collapse= ", "), "\n\n",
         "Training algorithm        :", active.fit$algo, '\n',
         "Number of networks        :", active.fit$ncommittee, '\n',
         "Hidden neurons per net    :", active.fit$hidden, '\n', 
+        if (active.fit$algo != "elm") paste(
+          "Max. number of iterations :", active.fit$maxit, '\n',
+          "Weight decay parameter    :", active.fit$regul, '\n' 
+        ),
         "Hidden neurons activation :", active.fit$activhid, "\n",
         "Output neurons activation :", active.fit$activout, "\n",
-        "Max. number of iterations :", active.fit$maxit, '\n\n',
+        "Seed                      :", active.fit$randseed, '\n\n',
         if (nrow(current.all.data) != nrow(active.fit$data)) {
           paste("\n", "Warning:", nrow(current.all.data) - nrow(active.fit$data), 
                 "observations removed because of NA values.\n")
@@ -127,9 +151,7 @@ shinyServer(function(input, output, session) {
                                               "mlp"= x$MSE_final,
                                               "elm"= mean(x$residuals**2),
                                               "nnet"= mean(x$residuals**2))))          
-
     )
-    
   })
   
   
@@ -177,10 +199,18 @@ shinyServer(function(input, output, session) {
   observe({
     if (is.null(input$file1)) return(NULL)
 
-    updateSelectInput(session, "varchoiceout",
-                      choices= as.list(colnames(current.all.data)))    
-    updateSelectInput(session, "varchoicein",
-                      choices= as.list(colnames(current.all.data)))
+    output$varchoice <- renderUI({
+      tableHorizRadio(names= colnames(current.all.data), 
+                      labels= paste("var", 1:ncol(current.all.data), sep=""),
+#                       choices= c("Not used",
+#                                  "Numeric Input",
+#                                  "Categorical Input",
+#                                  "Numeric Output",
+#                                  "Categorical Output"))
+                      choices= c("Not used",
+                                 "Input",
+                                 "Output"))
+    })
     
     output$ntrain <- renderUI(numericInput(inputId= "ntrain", 
                                            label= "Number of training samples:", 
@@ -207,18 +237,35 @@ shinyServer(function(input, output, session) {
   # Train the net when the button is hit
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
     dInput()
-    if(is.null(current.all.data) |
-         is.null(input$varchoicein) | is.null(input$varchoiceout)) {  
+    if(is.null(current.all.data)) {
       server.env$crt.train.clicks <- input$trainbutton
       return(NULL)
     }
     
+#     tmp.selvars= c(crt.var.types[["Numeric Input"]], 
+#                    crt.var.types[["Numeric Output"]],
+#                    crt.var.types[["Categorical Input"]],
+#                    crt.var.types[["Categorical Output"]])
+    tmp.selvars= c(crt.var.types[["Input"]], 
+                   crt.var.types[["Output"]])
+
+    if (is.null(tmp.selvars)) {
+      server.env$crt.train.clicks <- input$trainbutton
+      return(NULL)
+    }
+#     tmp.varchoicein <- c(crt.var.types[["Numeric Input"]], 
+#                          crt.var.types[["Categorical Input"]])
+#     tmp.varchoiceout <- c(crt.var.types[["Numeric Output"]], 
+#                           crt.var.types[["Categorical Output"]])
+    tmp.varchoicein <- c(crt.var.types[["Input"]])
+    tmp.varchoiceout <- c(crt.var.types[["Output"]])
+    
     # remove from working data the obs where input or output are NA
     tmp.data <- server.env$current.all.data[
-      rowSums(is.na(current.all.data[,c(input$varchoicein, 
-                                        input$varchoiceout)])) == 0, ]
+      rowSums(is.na(current.all.data[, tmp.selvars])) == 0, ]
+                       
     server.env$current.data <- tmp.data
-    
+
     set.seed(input$randseed)
     tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
     tmp.test <- (1:nrow(tmp.data))[-tmp.train]
@@ -226,15 +273,15 @@ shinyServer(function(input, output, session) {
     server.env$current.test <- tmp.test
 
     tmp.matrix <- model.matrix(as.formula(object= paste("~ 0+", 
-                                                        paste(input$varchoicein, 
+                                                        paste(tmp.varchoicein, 
                                                               collapse= "+") )),
                                data= tmp.data)
     tmp.rownames <- rownames(tmp.matrix)
     tmp.matnamesin <- colnames(tmp.matrix)
-    tmp.datnamesin <- input$varchoicein
-    tmp.namesout <- input$varchoiceout
+    tmp.datnamesin <- tmp.varchoicein
+    tmp.namesout <- tmp.varchoiceout
     tmp.matrix <- as.matrix(cbind(tmp.data[rownames(tmp.matrix),
-                                               input$varchoiceout], 
+                                               tmp.varchoiceout], 
                                   tmp.matrix))
     colnames(tmp.matrix) <- c(tmp.namesout, tmp.matnamesin)
     rownames(tmp.matrix) <- tmp.rownames
@@ -270,7 +317,7 @@ shinyServer(function(input, output, session) {
     } else tmp.hidden <- input$nhid1
     
     tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
-                           noms.out= input$varchoiceout, 
+                           noms.out= tmp.varchoiceout, 
                            niter= input$maxit, 
                            activ.hid= input$activhid, 
                            activ.out= input$activout,
@@ -280,7 +327,7 @@ shinyServer(function(input, output, session) {
                            hidden= tmp.hidden)
     
     # predict
-    tmp.pred <- matrix(0, ncol= length(input$varchoiceout),
+    tmp.pred <- matrix(0, ncol= length(tmp.varchoiceout),
                                       nrow= nrow(tmp.matrix))
     for (i_commi in 1:input$ncommittee)
       tmp.pred <- tmp.pred + predictTheNet(
@@ -305,8 +352,8 @@ shinyServer(function(input, output, session) {
            matrix= tmp.matrix,
            pred= tmp.pred,
            matnamesin= tmp.matnamesin,
-           datnamesin= input$varchoicein,
-           namesout= input$varchoiceout,
+           datnamesin= tmp.varchoicein,
+           namesout= tmp.varchoiceout,
            varin.range= tmp.varin.range,
            varout.mean= tmp.varout.mean,
            varout.sd= tmp.varout.sd,
@@ -316,6 +363,7 @@ shinyServer(function(input, output, session) {
            activout= input$activout,
            randseed= input$randseed,
            hidden= tmp.hidden,
+           regul= input$regul,
            maxit= input$maxit)
     }
     names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "-", input$algo)
@@ -334,12 +382,44 @@ shinyServer(function(input, output, session) {
     if (is.null(input$file1))
       return(cat("First import a dataset."))
     input$trainbutton
-    if(is.null(input$varchoicein) | is.null(input$varchoiceout)) 
-      return(cat("Choose at least one input and one output variable."))
+    
     if (crt.n.fits == 0) 
-      return(cat("Hit the Train button to train the neural network."))
+      return(cat("\nHit the Train button to train the neural network."))
     cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
         "You may train another neural network to compare results.")
+  })
+  
+  # Variables message
+  output$varMessage <- renderPrint({
+    input$fit # (fit selector is updated at the end of each training)
+    dInput()
+    if (is.null(input$file1))
+      return(cat("First import a dataset."))
+    input$trainbutton
+    
+    var.labels <- paste("var", 1:ncol(current.all.data), sep="")
+#     tmp.vars <- list("Not used"= NULL, "Numeric Output"= NULL,
+#                      "Numeric Input"= NULL, "Categorical Output"= NULL,
+#                      "Categorical Input"= NULL)
+    tmp.vars <- list("Not used"= NULL, "Output"= NULL, "Input"= NULL)
+    for (i_var in 1:ncol(current.all.data))
+      tmp.vars[[ input[[ var.labels[i_var] ]] ]] <- {
+        c(tmp.vars[[input[[var.labels[i_var]]]]],
+          colnames(current.all.data)[i_var])
+      }
+    
+#     if (length(tmp.vars[c("Numeric Output", "Categorical Output")]) == 0 &
+#           length(tmp.vars[c("Numeric Input", "Categorical Input")]) == 0 )
+    if (length(tmp.vars[c("Output")]) == 0 & length(tmp.vars[c("Input")]) == 0 )
+      return(cat("Select at least one input and one output variable"))
+    
+#     for (i_type in c("Numeric Output", "Categorical Output",
+#                      "Numeric Input", "Categorical Input"))
+    for (i_type in c("Output", "Input"))
+      if (!is.null(tmp.vars[[i_type]]))
+        cat(i_type, ":", paste(tmp.vars[[i_type]], collapse= ", "), "\n")
+    
+    server.env$crt.var.types <- tmp.vars
   })
   
   
@@ -594,8 +674,8 @@ shinyServer(function(input, output, session) {
                                        dervarchoicein),
                      index.out= which(active.fit$namesout ==
                                         dervarchoiceout),
-                     activHid= input$activhid,
-                     activOut= input$activout,
+                     activHid= active.fit$activhid,
+                     activOut= active.fit$activout,
                      standard.in= (active.fit$varin.range[2, dervarchoicein] - 
                                                    active.fit$varin.range[1, dervarchoicein]) / 2,
                      standard.out= active.fit$varout.sd[which(active.fit$namesout == dervarchoiceout)]) / 
@@ -611,8 +691,8 @@ shinyServer(function(input, output, session) {
                      matB= rbind(0, active.fit$net[[i_commi]]$outweight),
                      index.in= which(active.fit$matnamesin == dervarchoicein),
                      index.out= which(active.fit$namesout == dervarchoiceout),
-                     activHid= input$activhid,
-                     activOut= input$activout,
+                     activHid= active.fit$activhid,
+                     activOut= active.fit$activout,
                      standard.in= (active.fit$varin.range[2, dervarchoicein] - 
                                      active.fit$varin.range[1, dervarchoicein]) / 2,
                      standard.out= active.fit$varout.sd[which(active.fit$namesout == dervarchoiceout)]) / 
