@@ -249,56 +249,6 @@ shinyServer(function(input, output, session) {
     tmp.selvars= c(crt.var.types[["Input"]], 
                    crt.var.types[["Output"]])
 
-<<<<<<< HEAD
-      server.env$current.matrix <- tmp.matrix
-      server.env$current.matnamesin <- noms.in
-      server.env$current.datnamesin <- input$varchoicein
-      server.env$current.namesout <- input$varchoiceout
-      
-      # normalize
-#       server.env$crt.varin.range <- 
-#         sapply(as.data.frame(tmp.matrix[current.train, noms.in]), FUN= range)
-#       for (i_var in current.matnamesin)
-#         tmp.matrix[,i_var] <- 2 * ( (tmp.matrix[, i_var] - crt.varin.range[1, i_var] ) /
-#                                       (crt.varin.range[2, i_var] - crt.varin.range[1, i_var]) ) - 1
-#       server.env$crt.varout.mean <- 
-#         sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= mean)
-#       names(crt.varout.mean) <- current.namesout
-#       server.env$crt.varout.sd <- 
-#         sapply(as.data.frame(tmp.matrix[current.train, current.namesout]), FUN= sd)
-#       names(crt.varout.sd) <- current.namesout
-#       if (input$activout != "softmax") for (i_var in current.namesout)
-#         tmp.matrix[, i_var] <- (tmp.matrix[, i_var] - crt.varout.mean[i_var]) / crt.varout.sd[i_var]
-      
-      tmp.net <- trainTheNet(tmp.matrix, noms.in= noms.in, 
-                             noms.out= input$varchoiceout, 
-                             hidden= c(input$nhid1, input$nhid2, 
-                                       input$nhid3, 
-                                       input$nhid4)[1:input$nhidlay],
-                             niter= input$maxit, 
-                             activ.hid= input$activhid, 
-                             activ.out= input$activout,
-                             rand.seed= input$randseed, train= current.train, 
-                             test= current.test, regul= input$regul,
-                             ncommit= input$ncommittee, algo= input$algo)
-      
-
-      # predict
-      server.env$current.pred <- matrix(0, ncol= length(input$varchoiceout),
-                                        nrow= nrow(current.matrix))
-      for (i_commi in 1:input$ncommittee)
-        server.env$current.pred <- server.env$current.pred + predictTheNet(
-          net= tmp.net[[i_commi]], newdata= tmp.matrix, algo= input$algo, 
-          noms.in= current.matnamesin) / input$ncommittee
-      
-      # reverse normalization of prediction
-#        if (input$activout != "softmax") for (i_var in 1:ncol(current.pred))
-#          server.env$current.pred[, i_var] <- (server.env$current.pred[, i_var] * 
-#                                                 crt.varout.sd[i_var]) + crt.varout.mean[i_var]
-      
-      tmp.net
-    })
-=======
     if (is.null(tmp.selvars)) {
       server.env$crt.train.clicks <- input$trainbutton
       return(NULL)
@@ -331,8 +281,7 @@ shinyServer(function(input, output, session) {
                                   tmp.matrix))
     colnames(tmp.matrix) <- c(tmp.namesout, tmp.matnamesin)
     rownames(tmp.matrix) <- tmp.rownames
->>>>>>> dev
-    
+
     # normalize (TODO : fix problem when only one input)
     tmp.varin.range <- as.matrix(sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesin]), FUN= range))
     server.env$crt.varin.range <- tmp.varin.range

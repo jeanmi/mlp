@@ -43,14 +43,6 @@ shinyUI(pageWithSidebar(
       ),
 
       tabPanel("Train Net",
-<<<<<<< HEAD
-               h3("Second step: train the net"),
-               selectInput("algo", "Type of net :", 
-#                           choices= c("mlp", "elm", "nnet")),
-                           choices= "mlp"),
-                           actionButton("trainbutton","Train"),
-               verbatimTextOutput("summary"),
-=======
                verbatimTextOutput("trainMessage"),
                
                h4("Training options"),
@@ -92,7 +84,6 @@ shinyUI(pageWithSidebar(
                verbatimTextOutput("varMessage"),
                uiOutput("varchoice"),
                
->>>>>>> dev
                br(),
                h4("Advanced options"),
                numericInput("ncommittee", "Number of neural networks in the
