@@ -5,6 +5,14 @@ library(nnet)
 # Max file input size :
 options(shiny.maxRequestSize= 30*1024^2)
 
+# Option choices
+choices.activout <- list("mlp"= c("identity", "softmax"),
+                         "nnet"= c("identity", "softmax"),
+                         "elm"= "identity")
+choices.activhid <- list("mlp"= c("logistic", "htan"),
+                         "nnet"= "logistic",
+                         "elm"= "logistic")
+
 # training function
 trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
                         activ.hid, activ.out, rand.seed, train, test, regul,
@@ -46,7 +54,7 @@ predictTheNet <- function(net, newdata, algo, noms.in) {
     return(predict(net, newdata[,noms.in]))
 }
 
-## partial derivatives function for one-hidden layer net
+## partial derivatives function for nnet and elm
 # TODO : speed up
 partialDer <- function(input, matA, matB, index.in, index.out, 
                        activHid, activOut, standard.in, standard.out) {
@@ -60,17 +68,29 @@ partialDer <- function(input, matA, matB, index.in, index.out,
   if (activOut == "identity") {
     actOutFun <- identity
     actOutDer <- function(x) matrix(1, nrow= nrow(x), ncol= ncol(x))
-  } else stop("wrong activOut")
+  } else if (activOut != "softmax") stop("wrong activout")
   
   inputH <- as.matrix(cbind(1, input)) %*% matA
   matH <- actHidFun(inputH)
   derH <- actHidDer(inputH)
-    
   inputO <- as.matrix(cbind(1, matH)) %*% matB
-  derO <- actOutDer(inputO)
-  
-  res <- as.matrix(derO[, index.out] * rowSums(derH %*% diag(matA[index.in + 1, ] * matB[-1, index.out]) ))
-  (standard.out/standard.in) * res
+
+  if (activOut != "softmax") {
+    derO <- actOutDer(inputO)
+    
+    res <- as.matrix(derO[, index.out] * 
+                       rowSums(derH %*% diag(matA[index.in + 1, ] * 
+                                               matB[-1, index.out]) ))
+    res <-   (standard.out/standard.in) * res
+  } else {
+    out <- exp(inputO)
+    out <- out / rowSums(out)
+    res <- out[, index.out] * rowSums((derH %*% diag(matA[index.in + 1, ])) *
+                                        t(-t(out %*% t(matB[-1, ])) + 
+                                            matB[-1, index.out]))
+    res <- res/standard.in
+  }
+  res
 }
 
 # table of horizontal radiobuttons
@@ -220,21 +240,22 @@ shinyServer(function(input, output, session) {
                                                         0)))
   })
   
-  # Adapt choice of activations to choice of model
+  # Adapt choice of activations to choice of model (same selected if possible)
   observe({
     updateSelectInput(session, "activhid", 
-                      choices= switch(input$algo,
-                                      "mlp"= c("htan", "logistic"),
-                                      "nnet"= "logistic",
-                                      "elm"= "logistic"))    
+                      choices= choices.activhid[[input$algo]],
+                      selected= ifelse(input$activhid %in% 
+                                         choices.activhid[[input$algo]],
+                                       input$activhid, 1))
     updateSelectInput(session, "activout", 
-                      choices= switch(input$algo,
-                                      "mlp"= c("identity", "softmax"),
-                                      "nnet"= "identity",
-                                      "elm"= "identity"))    
+                      choices= choices.activout[[input$algo]],
+                      selected= ifelse(input$activout %in% 
+                                         choices.activout[[input$algo]],
+                                       input$activout, 1))
   })
   
   # Train the net when the button is hit
+  ## TODO : fix 2-level factors, and softmax training with single input
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
     dInput()
     if(is.null(current.all.data)) {
@@ -742,6 +763,8 @@ shinyServer(function(input, output, session) {
   })
   
   # plot derivatives
+  ## TODO : fix strange bug when switching between models (different plots when going up or down...)
+  ## also happens for prediction plots. Plots not updated correctly, fixed when eg lowess is turned off/on
   output$derplot <- renderPlot({
     input$fit
     if (crt.n.fits == 0) return(NULL)
