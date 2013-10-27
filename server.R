@@ -51,7 +51,7 @@ predictTheNet <- function(net, newdata, algo, noms.in) {
   if (algo == "mlp")
     return(FPredictNet(net$net, newdata))
   if (algo %in% c("elm", "nnet"))
-    return(predict(net, newdata[,noms.in]))
+    return(predict(net, as.matrix(newdata[,noms.in])))
 }
 
 ## partial derivatives function for nnet and elm
@@ -255,7 +255,7 @@ shinyServer(function(input, output, session) {
   })
   
   # Train the net when the button is hit
-  ## TODO : fix 2-level factors, and softmax training with single input
+  ## TODO : fix 2-level factors
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
     dInput()
     if(is.null(current.all.data)) {
@@ -270,16 +270,16 @@ shinyServer(function(input, output, session) {
     tmp.selvars= c(crt.var.types[["Input"]], 
                    crt.var.types[["Output"]])
 
-    if (is.null(tmp.selvars)) {
-      server.env$crt.train.clicks <- input$trainbutton
-      return(NULL)
-    }
 #     tmp.varchoicein <- c(crt.var.types[["Numeric Input"]], 
 #                          crt.var.types[["Categorical Input"]])
 #     tmp.varchoiceout <- c(crt.var.types[["Numeric Output"]], 
 #                           crt.var.types[["Categorical Output"]])
     tmp.varchoicein <- c(crt.var.types[["Input"]])
     tmp.varchoiceout <- c(crt.var.types[["Output"]])
+    if (is.null(tmp.varchoicein) | is.null(tmp.varchoiceout)) {
+      server.env$crt.train.clicks <- input$trainbutton
+      return(NULL)
+    }
     
     # remove from working data the obs where input or output are NA
     tmp.data <- server.env$current.all.data[
