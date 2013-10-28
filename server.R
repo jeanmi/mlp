@@ -482,13 +482,12 @@ shinyServer(function(input, output, session) {
                         input$diagvarchoicein
                       } else 1)
     
-#     updateSelectInput(session, "diagplottype", 
-#                       choices= choices.diagplottype[[active.fit$algo]],
-#                       selected=
-#                         if(input$diagplottype %in% 
-#                              unlist(choices.diagplottype[[active.fit$algo]])) {
-#                         input$diagplottype
-#                       } else 2)
+    updateSelectInput(session, "diagplottype", 
+                      choices= choices.diagplottype[[active.fit$algo]],
+                      selected=
+                        names(choices.diagplottype[[active.fit$algo]])[
+                          input$diagplottype == 
+                            unlist(choices.diagplottype[[active.fit$algo]])] )
   })
   
   # Diagnostics plot

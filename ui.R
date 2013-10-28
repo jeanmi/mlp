@@ -102,7 +102,8 @@ shinyUI(pageWithSidebar(
                                          "Actual vs Fitted"= "actfit",
                                          "Error distribution"= "errdistr",
                                          "Residual vs Fitted"= "residfit",
-                                         "Residual vs Predictor"= "residinput")),
+                                         "Residual vs Predictor"= "residinput")
+               ),
                conditionalPanel("input.diagplottype == 'actfit' ||
                                 input.diagplottype == 'errdistr' ||
                                 input.diagplottype == 'residfit' ||
@@ -111,13 +112,11 @@ shinyUI(pageWithSidebar(
                                             choices= c("test", "training", "whole")),
                                 selectInput("diagvarchoiceout", "Output variable", 
                                             choices= "(First train)")
-                                
                ),
                conditionalPanel("input.diagplottype == 'residinput'", 
                                 selectInput("diagvarchoicein", "Input variable", 
                                             choices= "(First train)")
                ),
-               textOutput("diagMessage"),
                plotOutput("diagplot")
                ),
       
