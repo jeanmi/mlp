@@ -51,9 +51,11 @@ shinyUI(pageWithSidebar(
       ),
 
       tabPanel("Train Net",
+               actionButton("oneClickButton", "Auto Train"), 
+               br(), br(),
                verbatimTextOutput("trainMessage"),
                
-               h4("Training options"),
+               h4("Manual training"),
                selectInput("algo", "Type of network :", 
                            choices= list("Multilayer Perceptron (rprop)"= "rprop", 
                                          "Extreme Learning Machine"= "elm", 

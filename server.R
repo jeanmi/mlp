@@ -29,6 +29,10 @@ choices.diagplottype <- {
                    "Residual vs Predictor"= "residinput"))
 }
 
+################################################################################
+################################################################################
+## Global functions
+
 # training function
 trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
                         activ.hid, activ.out, rand.seed, train, test, regul,
@@ -135,7 +139,53 @@ xtable <- function(x, ...) {
   xtable::xtable(x, ...)
 }
 
+# adapted golden search
+phi = (1 + sqrt(5)) / 2
+resphi = 2 - phi
 
+goldenSearchRecurs <- function (a, b, c, cost.a, cost.b, cost.c, cost) {
+  if (c - b > b - a) {
+    x = ceiling( b + resphi * (c - b) )
+  } else x = ceiling( b - resphi * (b - a) )
+  
+  if ( x %in% c(a, b, c)) return(b)
+  cost.x <- cost(x)
+  if ( x < b & cost.x > cost.a) return(b)
+  if ( x > b & cost.x > cost.c) return(b)
+  
+  if (cost.x < cost.b) {
+    if (c - b > b - a) {
+      return(goldenSearchRecurs(b, x, c, cost.b, cost.x, cost.c, cost))
+    } else return(goldenSearchRecurs(a, x, b, cost.a, cost.x, cost.b, cost))
+  } else {
+    if (c - b > b - a) {
+      return(goldenSearchRecurs(a, b, x,  cost.a, cost.b, cost.x, cost))
+    } else return(goldenSearchRecurs(x, b, c, cost.x, cost.b, cost.c, cost))
+  }
+}
+
+# repeated 10-fold cross-validation of prediction error for elm
+elmCVErr= function(dat, tries, nhid, names.in, names.out) {
+  cvsamp <- sample(1:10, size= nrow(dat), replace= TRUE)
+  res <- 0
+  for (i.tries in 1:tries) {
+    mse <- 0
+    for (i.cv in 1:10) {
+      tmp.train <- elmtrain(x= dat[cvsamp != i.cv, names.in], 
+                            y= dat[cvsamp != i.cv, names.out], 
+                            actfun= "sig", nhid= nhid)
+      mse <- mse + mean((dat[cvsamp == i.cv, names.out] - 
+                           predict(tmp.train, dat[cvsamp == i.cv, names.in])
+      )**2) / 10
+    }
+    res <- res + mse / tries
+  }
+  res
+}
+
+
+################################################################################
+################################################################################
 # Server
 shinyServer(function(input, output, session) {
   # server environment variables
@@ -143,6 +193,7 @@ shinyServer(function(input, output, session) {
   current.all.data <- NULL # with na
   crt.train.clicks <- 0 # number of times train button was clicked
   crt.der.clicks <- 0 # number of times der button was clicked
+  crt.one.clicks <- 0 # number of times oneClickTrain button was clicked
   crt.fits <- list() # list of trained nets
   crt.n.fits <- 0 # number of trained nets
   active.fit <- NULL # current net, taken from crt.fits
@@ -160,6 +211,8 @@ shinyServer(function(input, output, session) {
   
   # Summary of current fit
   output$summary <- renderPrint({ 
+    input$trainButton
+    input$oneClickButton
     input$fit
     if(crt.n.fits == 0) return(cat("Training results will appear here."))
     
@@ -496,6 +549,7 @@ shinyServer(function(input, output, session) {
     if (is.null(input$file1))
       return(cat("First import a dataset."))
     input$trainbutton
+    input$oneClickButton
     
     var.labels <- paste("var", 1:ncol(current.all.data), sep="")
     tmp.vars <- list("Not used"= NULL, "Numeric Output"= NULL,
@@ -521,6 +575,205 @@ shinyServer(function(input, output, session) {
     
     server.env$crt.var.types <- tmp.vars
   })
+  
+  # One-click training
+  ## TODO : error-checking for categorical input in CV.
+  oneClickTrain<- observe({ if(input$oneClickButton > crt.one.clicks) {
+    dInput()
+    if(is.null(current.all.data)) {
+      output$trainMessage <- renderPrint({
+        cat("Error : first import a dataset.")
+      })
+      server.env$crt.one.clicks <- input$oneClickButton
+      return(NULL)
+    }
+    
+    tmp.selvars= c(crt.var.types[["Numeric Input"]], 
+                   crt.var.types[["Numeric Output"]],
+                   crt.var.types[["Categorical Input"]],
+                   crt.var.types[["Categorical Output"]])
+    
+    tmp.varchoicein <- c(crt.var.types[["Numeric Input"]], 
+                         crt.var.types[["Categorical Input"]])
+    tmp.varchoiceout <- c(crt.var.types[["Numeric Output"]], 
+                          crt.var.types[["Categorical Output"]])
+
+    if (is.null(tmp.varchoicein) | is.null(tmp.varchoiceout)) {
+      output$trainMessage <- renderPrint(cat("Error : select at least one",
+                                             "input and one output variable."))
+      server.env$crt.one.clicks <- input$oneClickButton
+      return(NULL)
+    }
+    
+    # remove from working data the obs where input or output are NA
+    tmp.data <- server.env$current.all.data[
+      rowSums(is.na(current.all.data[, tmp.selvars])) == 0, ]
+    
+    # check for constants
+    tmp.constants <- sapply(tmp.data[, tmp.selvars], 
+                            function(x) length(unique(x)) < 2)
+    if (any(tmp.constants)) {
+      output$trainMessage <- renderPrint({
+        cat("Error : variable(s)", 
+            paste(tmp.selvars[tmp.constants], collapse= ","),
+            "are constant.")        
+      })
+      server.env$crt.one.clicks <- input$oneClickButton
+      return(NULL)
+    }
+    
+    # make variables conform to specified types
+    for (i_var in c(crt.var.types[["Categorical Input"]],
+                    crt.var.types[["Categorical Output"]]))
+      tmp.data[, i_var] <- as.factor(tmp.data[, i_var])
+    for (i_var in c(crt.var.types[["Numeric Input"]],
+                    crt.var.types[["Numeric Output"]]))
+      tmp.data[, i_var] <- as.numeric(tmp.data[, i_var])
+    
+    # transform data into numeric matrices
+    tmp.matrix.in <- model.matrix(data= tmp.data, {
+      as.formula(object= paste("~ 0+", paste(tmp.varchoicein, collapse= "+") ))
+    })
+    tmp.matrix.out <- model.matrix(data= tmp.data, {
+      as.formula(object= paste("~ 0+", paste(tmp.varchoiceout, collapse= "+") ))
+    })
+    tmp.rownames <- rownames(tmp.matrix.in)
+    tmp.matnamesin <- colnames(tmp.matrix.in)
+    tmp.datnamesin <- tmp.varchoicein
+    tmp.matnamesout <- colnames(tmp.matrix.out)
+    tmp.datnamesout <- tmp.varchoiceout
+    tmp.matrix <- cbind(tmp.matrix.out, tmp.matrix.in)
+    rownames(tmp.matrix) <- tmp.rownames
+    tmp.matrix.nonorm <- tmp.matrix
+    
+    # draw training and test samples
+    set.seed(input$randseed)
+    tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
+    tmp.test <- (1:nrow(tmp.data))[-tmp.train]
+    
+    # check if no variables (categorical inputs) are missing in training sample
+    check.cat <- apply(tmp.matrix[tmp.train, ], MARGIN= 2,
+                       function(x) length(unique(x)) < 2)
+    if (any(check.cat)) {
+      output$trainMessage <- renderPrint({
+        cat(" Some variables (", 
+            paste(colnames(tmp.matrix)[check.cat], collapse= ", "), 
+            ") are constant in training sample.\n",
+            "This is probably due to a categorical variable with many values.",
+            "\nTry changing variable types or increase training sample size.")
+      })
+      server.env$crt.one.clicks <- input$oneClickButton
+      return(NULL)
+    }
+    
+    # normalize
+    tmp.varin.range <- sapply(as.data.frame(tmp.matrix[tmp.train, 
+                                                       tmp.matnamesin]), 
+                              FUN= range)
+    colnames(tmp.varin.range) <- tmp.matnamesin
+    for (i_var in tmp.matnamesin)
+      tmp.matrix[,i_var] <- {
+        2 * ( (tmp.matrix[, i_var] - tmp.varin.range[1, i_var] ) /
+                (tmp.varin.range[2, i_var] - tmp.varin.range[1, i_var]) ) - 1
+      }
+    tmp.varout.mean <- 
+      sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesout]), FUN= mean)
+    names(tmp.varout.mean) <- tmp.matnamesout
+    tmp.varout.sd <- 
+      sapply(as.data.frame(tmp.matrix[tmp.train, tmp.matnamesout]), FUN= sd)
+    names(tmp.varout.sd) <- tmp.matnamesout
+    for (i_var in tmp.matnamesout)
+      tmp.matrix[, i_var] <- {
+        (tmp.matrix[, i_var] - tmp.varout.mean[i_var]) / tmp.varout.sd[i_var]
+      }
+    
+    # Find the best number of hidden neurons
+    cost.5 <- elmCVErr(tmp.matrix, tries= 10, nhid= 5,
+                       names.in= tmp.matnamesin, names.out= tmp.matnamesout)
+    end <- 100
+    cost.end <- -Inf
+    while (cost.5 > cost.end){
+      end <- end * 2
+      cost.end <- elmCVErr(tmp.matrix, tries= ifelse(end>10, 1, 10), nhid= end,
+                           names.in= tmp.matnamesin, names.out= tmp.matnamesout)
+    }
+    mid <- ceiling((end + 5 * 1.618) / 2.618)
+    cost.mid <- elmCVErr(tmp.matrix, tries= 10, nhid= mid,
+                         names.in= tmp.matnamesin, names.out= tmp.matnamesout)
+    mid <- goldenSearchRecurs(5, mid, end, cost.5, cost.mid, cost.end, 
+                              function(x) {
+                                elmCVErr(tmp.matrix, tries= 10, nhid= x,
+                                         names.in= tmp.matnamesin, 
+                                         names.out= tmp.matnamesout)
+                              })
+    
+    # Train
+    tmp.train.time <- system.time({
+      tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
+                             noms.out= tmp.matnamesout, 
+                             niter= NULL, 
+                             activ.hid= "logistic", 
+                             activ.out= "identity",
+                             rand.seed= input$randseed, train= tmp.train, 
+                             test= tmp.test, regul= 0,
+                             ncommit= input$ncommittee, algo= "elm",
+                             hidden= mid)
+    })[3]
+    
+    # predict
+    tmp.pred <- matrix(0, ncol= length(tmp.matnamesout),
+                       nrow= nrow(tmp.matrix))
+    for (i_commi in 1:input$ncommittee)
+      tmp.pred <- tmp.pred + predictTheNet(
+        net= tmp.net[[i_commi]], newdata= tmp.matrix, algo= "elm", 
+        noms.in= tmp.matnamesin) / input$ncommittee
+    
+    # reverse normalization of prediction
+    for (i_var in 1:ncol(tmp.pred))
+      tmp.pred[, i_var] <- {
+        (tmp.pred[, i_var] * tmp.varout.sd[i_var]) + tmp.varout.mean[i_var]
+      }
+    
+    # Save net into fits list
+    server.env$crt.n.fits <- crt.n.fits + 1
+    server.env$crt.fits[[crt.n.fits]] <- {
+      list(net= tmp.net,
+           data= tmp.data, # not necessary?
+           train= tmp.train,
+           test= tmp.test,
+           matrix= tmp.matrix,
+           matrix.nonorm= tmp.matrix.nonorm,
+           pred= tmp.pred,
+           matnamesin= tmp.matnamesin,
+           datnamesin= tmp.varchoicein,
+           matnamesout= tmp.matnamesout,
+           datnameout= tmp.datnamesout,
+           varin.range= tmp.varin.range,
+           varout.mean= tmp.varout.mean,
+           varout.sd= tmp.varout.sd,
+           algo= "elm",
+           ncommittee= input$ncommittee,
+           activhid= "logistic",
+           activout= "identity",
+           randseed= input$randseed,
+           hidden= mid,
+           regul= 0,
+           maxit= 1,
+           train.time= tmp.train.time)
+    }
+    names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "- elm")
+    
+    output$trainMessage <- renderPrint({
+      cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
+          "You may train another neural network to compare results.")
+    })
+    
+    # Update models list on the left
+    updateSelectInput(session, "fit", choices= rev(names(crt.fits)))
+    
+    # Update train button counter
+    server.env$crt.one.clicks <- input$oneClickButton
+  }})
   
   
   ##############################################################################
