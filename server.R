@@ -128,6 +128,14 @@ tableHorizRadio <- function(names, labels, choices) {
   HTML(tmp.text)
 }
 
+# to avoid date error with excel files
+xtable <- function(x, ...) {
+  for (i in which(sapply(x, function(y) 
+    !all(is.na(match(c("POSIXt","Date"),class(y))))))) x[[i]] <- as.numeric(x[[i]])
+  xtable::xtable(x, ...)
+}
+
+
 # Server
 shinyServer(function(input, output, session) {
   # server environment variables
