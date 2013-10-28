@@ -287,7 +287,7 @@ shinyServer(function(input, output, session) {
   })
   
   # Train the net when the button is hit
-  ## TODO : fix error when categorical inputs are not all present in training set...
+  ## TODO : binary output
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
     dInput()
     if(is.null(current.all.data)) {
@@ -369,9 +369,11 @@ shinyServer(function(input, output, session) {
                        function(x) length(unique(x)) < 2)
     if (any(check.cat)) {
       output$trainMessage <- renderPrint({
-        cat(" Some variables are constant in training sample.\n",
-            "This is probably due to categorical variables with many values.\n",
-            "Try changing variable types or increase training sample size.")
+        cat(" Some variables (", 
+            paste(colnames(tmp.matrix)[check.cat], collapse= ", "), 
+            ") are constant in training sample.\n",
+            "This is probably due to a categorical variable with many values.",
+            "\nTry changing variable types or increase training sample size.")
       })
       server.env$crt.train.clicks <- input$trainbutton
       return(NULL)
@@ -670,8 +672,9 @@ shinyServer(function(input, output, session) {
     plot(tmp.tab, 
          xlab= input$predvarchoicein, 
          ylab= input$predvarchoiceout,
-         ylim= range(active.fit$matrix.nonorm[tmp.sample, 
-                                              input$predvarchoiceout]))
+         ylim= range(c(active.fit$matrix.nonorm[tmp.sample, 
+                                                input$predvarchoiceout],
+                       tmp.tab[, 2])))
 
     if (input$predsmooth) {
       tmp.lowess <- lowess(x= tmp.tab[, 1], y= tmp.tab[, 2], 
@@ -917,16 +920,23 @@ shinyServer(function(input, output, session) {
     legend("topleft", lty= 1, col= 4, "y=0")
   })
   
-#   # Download derivatives
-#   output$derdownload <- downloadHandler(filename= function() {
-#     paste("mlp_der_", active.fit$der.varout, "_",
-#           format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
-#   }, content= function(file) {
-#     write.csv(active.fit$der, file= file, 
-#               row.names= rownames(current.all.data)[rownames(current.all.data)
-#                                                     %in% rownames(active.fit$data)],
-#               col.names= active.fit$matnamesin)
-#   })
+  # Download derivatives
+  output$derdownload <- downloadHandler(filename= function() {
+    paste("mlp_der_", active.fit$der.varout, "_",
+          format(Sys.time(),format="-%Y-%m-%d_%H:%M"),".csv",sep="")
+  }, content= function(file) {
+    all.der <- NULL
+    for (i_var in names(active.fit$der)) {
+      tmp.der <- active.fit$der[[i_var]]
+      colnames(tmp.der) <- paste(i_var, "/", colnames(tmp.der))
+      all.der <- cbind(all.der, tmp.der)
+    }
+    write.csv(all.der, file= file, 
+              row.names= {
+                rownames(current.all.data)[rownames(current.all.data)
+                                           %in% rownames(active.fit$data)]
+              })
+  })
 })
 
 
