@@ -19,21 +19,29 @@ shinyUI(pageWithSidebar(
                h2("Data importation"),
                p(HTML("To run the application, import your data set using the 
                 import button on the left panel. Your data must be supplied 
-                in the form of a text/csv file. If the importation is done 
-                properly, a preview of the data is displayed below as a 
+                in the form of a text/csv or excel file. If the importation is  
+                done properly, a preview of the data is displayed below as a 
                 table. When this is done, you can proceed to the next step: 
                 Train Net")),
-               fileInput('file1', 'Choose CSV/TXT File'),
+               selectInput("filetype", "Type of file", 
+                           list("CSV or Text"= "csv",
+                                "Excel"= "xls")),
+               fileInput('file1', "Choose File:"),
                checkboxInput('header', ' Header?', TRUE),
-               checkboxInput('rownames', ' Row names?', FALSE),
-               selectInput('sep', 'Separator:', 
-                           c(Comma=',', Semicolon=';', Tab='\t', Space=' '),
-                           'Comma'),
-               selectInput('quote', 'Quote:',  
-                           c(None='', 'Double Quote'='"', 'Single Quote'="'"), 
-                           'Double Quote'),
-               selectInput('dec', 'Decimal mark', c(Period='.', Comma=','), 
-                           'Period'),
+               conditionalPanel("input.filetype == 'csv'",
+                                checkboxInput('rownames', ' Row names?', FALSE),
+                                selectInput('sep', 'Separator:', 
+                                            c(Comma=',', Semicolon=';', 
+                                              Tab='\t', Space=' '),
+                                            'Comma'),
+                                selectInput('quote', 'Quote:',  
+                                            c(None='', 'Double Quote'='"', 
+                                              'Single Quote'="'"), 
+                                            'Double Quote'),
+                                selectInput('dec', 'Decimal mark', 
+                                            c(Period='.', Comma=','), 
+                                            'Period')
+                                ),
 
                numericInput('nrow.preview', 'Number of rows in the preview:', 20),
                numericInput('ncol.preview', 'Number of columns in the preview:', 10),

@@ -1,6 +1,7 @@
 library(SwarmNet)
 library(elmNN)
 library(nnet)
+library(XLConnect)
 
 # Max file input size :
 options(shiny.maxRequestSize= 30*1024^2)
@@ -210,13 +211,17 @@ shinyServer(function(input, output, session) {
     if (is.null(in.file))
       return(NULL)
     
-    if (input$rownames) {
-      the.table <- read.table(in.file$datapath, header=input$header, 
-                              sep=input$sep, quote=input$quote, 
-                              row.names=1, dec=input$dec)
-    } else the.table <- read.table(in.file$datapath, header=input$header, 
-                                   sep=input$sep, quote=input$quote, 
-                                   dec=input$dec)
+    if (input$filetype == "csv") {
+      if (input$rownames) {
+        the.table <- read.table(in.file$datapath, header=input$header, 
+                                sep=input$sep, quote=input$quote, 
+                                row.names=1, dec=input$dec)
+      } else the.table <- read.table(in.file$datapath, header=input$header, 
+                                     sep=input$sep, quote=input$quote, 
+                                     dec=input$dec)
+    } else the.table <- readWorksheetFromFile(in.file$datapath, 
+                                              header= input$header,
+                                              sheet= 1)      
     
     # clear trained networks
     server.env$crt.fits <- list()
