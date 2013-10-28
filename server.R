@@ -172,6 +172,7 @@ shinyServer(function(input, output, session) {
         "\n Input variable(s):", paste(active.fit$matnamesin, collapse= ", "), 
         "\n\n",
         "Training algorithm        :", active.fit$algo, '\n',
+        "Training time (sec.)      :", active.fit$train.time, '\n',
         "Number of networks        :", active.fit$ncommittee, '\n',
         "Hidden neurons per net    :", active.fit$hidden, '\n', 
         if (active.fit$algo != "elm") paste(
@@ -180,6 +181,8 @@ shinyServer(function(input, output, session) {
         ),
         "Hidden neurons activation :", active.fit$activhid, "\n",
         "Output neurons activation :", active.fit$activout, "\n",
+        "Size of training sample   :", length(active.fit$train), "\n",
+        "Size of test sample       :", length(active.fit$test), "\n",
         "Seed                      :", active.fit$randseed, '\n\n',
         if (nrow(current.all.data) != nrow(active.fit$data)) {
           paste("\n", "Warning:", 
@@ -284,7 +287,7 @@ shinyServer(function(input, output, session) {
   })
   
   # Train the net when the button is hit
-  ## TODO : fix 2-level factors
+  ## TODO : fix error when categorical inputs are not all present in training set...
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
     dInput()
     if(is.null(current.all.data)) {
@@ -328,6 +331,7 @@ shinyServer(function(input, output, session) {
             paste(tmp.selvars[tmp.constants], collapse= ","),
             "are constant.")        
       })
+      server.env$crt.train.clicks <- input$trainbutton
       return(NULL)
     }
     
@@ -339,10 +343,7 @@ shinyServer(function(input, output, session) {
                     crt.var.types[["Numeric Output"]]))
       tmp.data[, i_var] <- as.numeric(tmp.data[, i_var])
     
-    set.seed(input$randseed)
-    tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
-    tmp.test <- (1:nrow(tmp.data))[-tmp.train]
-
+    # transform data into numeric matrices
     tmp.matrix.in <- model.matrix(data= tmp.data, {
       as.formula(object= paste("~ 0+", paste(tmp.varchoicein, collapse= "+") ))
     })
@@ -352,16 +353,29 @@ shinyServer(function(input, output, session) {
     tmp.rownames <- rownames(tmp.matrix.in)
     tmp.matnamesin <- colnames(tmp.matrix.in)
     tmp.datnamesin <- tmp.varchoicein
-#     tmp.namesout <- tmp.varchoiceout
-#     tmp.matrix <- as.matrix(cbind(tmp.data[rownames(tmp.matrix),
-#                                                tmp.varchoiceout], 
-#                                   tmp.matrix))
-#     colnames(tmp.matrix) <- c(tmp.namesout, tmp.matnamesin)
     tmp.matnamesout <- colnames(tmp.matrix.out)
     tmp.datnamesout <- tmp.varchoiceout
     tmp.matrix <- cbind(tmp.matrix.out, tmp.matrix.in)
     rownames(tmp.matrix) <- tmp.rownames
     tmp.matrix.nonorm <- tmp.matrix
+
+    # draw training and test samples
+    set.seed(input$randseed)
+    tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
+    tmp.test <- (1:nrow(tmp.data))[-tmp.train]
+    
+    # check if no variables (categorical inputs) are missing in training sample
+    check.cat <- apply(tmp.matrix[tmp.train, ], MARGIN= 2,
+                       function(x) length(unique(x)) < 2)
+    if (any(check.cat)) {
+      output$trainMessage <- renderPrint({
+        cat(" Some variables are constant in training sample.\n",
+            "This is probably due to categorical variables with many values.\n",
+            "Try changing variable types or increase training sample size.")
+      })
+      server.env$crt.train.clicks <- input$trainbutton
+      return(NULL)
+    }
 
     # normalize
     tmp.varin.range <- sapply(as.data.frame(tmp.matrix[tmp.train, 
@@ -392,15 +406,17 @@ shinyServer(function(input, output, session) {
                       input$nhid4)[1:input$nhidlay]
     } else tmp.hidden <- input$nhid1
     
-    tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
-                           noms.out= tmp.matnamesout, 
-                           niter= input$maxit, 
-                           activ.hid= input$activhid, 
-                           activ.out= input$activout,
-                           rand.seed= input$randseed, train= tmp.train, 
-                           test= tmp.test, regul= input$regul,
-                           ncommit= input$ncommittee, algo= input$algo,
-                           hidden= tmp.hidden)
+    tmp.train.time <- system.time({
+      tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
+                             noms.out= tmp.matnamesout, 
+                             niter= input$maxit, 
+                             activ.hid= input$activhid, 
+                             activ.out= input$activout,
+                             rand.seed= input$randseed, train= tmp.train, 
+                             test= tmp.test, regul= input$regul,
+                             ncommit= input$ncommittee, algo= input$algo,
+                             hidden= tmp.hidden)
+    })[3]
     
     # predict
     tmp.pred <- matrix(0, ncol= length(tmp.matnamesout),
@@ -440,7 +456,8 @@ shinyServer(function(input, output, session) {
            randseed= input$randseed,
            hidden= tmp.hidden,
            regul= input$regul,
-           maxit= input$maxit)
+           maxit= input$maxit,
+           train.time= tmp.train.time)
     }
     names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "-", input$algo)
     

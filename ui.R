@@ -89,7 +89,7 @@ shinyUI(pageWithSidebar(
                numericInput("ncommittee", "Number of neural networks in the
                             committee:", value= 1, min= 1),
                uiOutput("ntrain"),
-               selectInput("activhid", "Hidden neurons activation:", 
+               selectInput("activhid", "Hidden neurons activation function:", 
                            choices= c("htan", "logistic")),
                numericInput("randseed", 
                             "Random seed for reproducible results:",
