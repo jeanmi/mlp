@@ -6,14 +6,14 @@ library(nnet)
 options(shiny.maxRequestSize= 30*1024^2)
 
 # Option choices
-choices.activout <- list("mlp"= c("identity", "softmax"),
+choices.activout <- list("rprop"= c("identity", "softmax"),
                          "nnet"= c("identity", "softmax"),
                          "elm"= "identity")
-choices.activhid <- list("mlp"= c("logistic", "htan"),
+choices.activhid <- list("rprop"= c("logistic", "htan"),
                          "nnet"= "logistic",
                          "elm"= "logistic")
 choices.diagplottype <- {
-  list("mlp"= list("Training error"= "trainerr",
+  list("rprop"= list("Training error"= "trainerr",
                    "Actual vs Fitted"= "actfit",
                    "Error distribution"= "errdistr",
                    "Residual vs Fitted"= "residfit",
@@ -35,7 +35,7 @@ trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
   #  set.seed(rand.seed)
   res= NULL
   for (i_comm in 1:ncommittee) {
-    if (algo == "mlp") {
+    if (algo == "rprop") {
       res= c(res, list(FBackpropNet(tmp.matrix, hidden= hidden, 
                                     noms_in= noms.in, 
                                     noms_out= noms.out,
@@ -64,7 +64,7 @@ trainTheNet <- function(tmp.matrix, noms.in, noms.out, hidden, niter,
 
 ## prediction function
 predictTheNet <- function(net, newdata, algo, noms.in) {
-  if (algo == "mlp")
+  if (algo == "rprop")
     return(FPredictNet(net$net, newdata))
   if (algo %in% c("elm", "nnet"))
     return(predict(net, as.matrix(newdata[,noms.in])))
@@ -152,7 +152,7 @@ shinyServer(function(input, output, session) {
   # Summary of current fit
   output$summary <- renderPrint({ 
     input$fit
-    if(crt.n.fits == 0) return(NULL)
+    if(crt.n.fits == 0) return(cat("Training results will appear here."))
     
     cat(" Training sample MSE :", {
       mean((active.fit$pred[active.fit$train,] -
@@ -194,7 +194,7 @@ shinyServer(function(input, output, session) {
         if (active.fit$ncommittee > 1) 
           as.matrix(sapply(active.fit$net, 
                            function(x) switch(active.fit$algo,
-                                              "mlp"= x$MSE_final,
+                                              "rprop"= x$MSE_final,
                                               "elm"= mean(x$residuals**2),
                                               "nnet"= mean(x$residuals**2))))          
     )
@@ -400,12 +400,13 @@ shinyServer(function(input, output, session) {
         (tmp.matrix[, i_var] - tmp.varout.mean[i_var]) / tmp.varout.sd[i_var]
       }
     
-    if (input$algo == "mlp") {
+    if (input$algo == "rprop") {
       tmp.hidden <- c(input$nhid1, input$nhid2, 
                       input$nhid3, 
                       input$nhid4)[1:input$nhidlay]
     } else tmp.hidden <- input$nhid1
     
+    # Train
     tmp.train.time <- system.time({
       tmp.net <- trainTheNet(tmp.matrix, noms.in= tmp.matnamesin, 
                              noms.out= tmp.matnamesout, 
@@ -548,7 +549,7 @@ shinyServer(function(input, output, session) {
                          "whole"= c(active.fit$train, active.fit$test))
     switch(input$diagplottype, 
            "trainerr"= {
-             if (active.fit$algo != "mlp") return(NULL)
+             if (active.fit$algo != "rprop") return(NULL)
              plot(active.fit$net[[1]]$evol_err, 
                   ylim= range(c(active.fit$net[[1]]$evol_err, 
                                 active.fit$net[[1]]$evol_test)),
@@ -743,7 +744,7 @@ shinyServer(function(input, output, session) {
   # launch derivatives function
   computeDer <- function(algo, dervarchoicein, dervarchoiceout, ncommittee,
                          activhid, activout) {
-    if (algo == "mlp") { #  all input variables at once with FNetPartial
+    if (algo == "rprop") { #  all input variables at once with FNetPartial
       tmp.der <- 0
       for (i_commi2 in 1:ncommittee) {
         tmp.der <- tmp.der + 
@@ -830,7 +831,7 @@ shinyServer(function(input, output, session) {
     if (input$derbutton > crt.der.clicks) {
       for (i_varout in active.fit$matnamesout) {
         tmp.der <- NULL
-        if (active.fit$algo == "mlp") {
+        if (active.fit$algo == "rprop") {
           tmp.der <- computeDer(active.fit$algo, 
                                 NULL, 
                                 i_varout, 

@@ -1,16 +1,16 @@
 # Define UI for dataset viewer application
 shinyUI(pageWithSidebar(
   # Application title
-  headerPanel("MLP"),
+  headerPanel("Easy Feedforward Neural Networks (beta version)"),
   
-  sidebarPanel(p(HTML("Free Online Multilayer Perceptron <br /> 
-                      (alpha version)")),
-               conditionalPanel("input.trainbutton > 0",
-                                selectInput("fit",
-                                            "Active neural network:",
-                                            choices= "(No trained networks)"),
-                                verbatimTextOutput("summary"))
-               ),
+  sidebarPanel(p(HTML("Train and analyze feedforward neural networks 
+                      (aka multilayer perceptrons) for regression and 
+                      classification tasks.")),
+               selectInput("fit",
+                           "Active neural network:",
+                           choices= "(No trained networks)"),
+               verbatimTextOutput("summary")
+  ),
 
   mainPanel(
     tabsetPanel(
@@ -47,17 +47,17 @@ shinyUI(pageWithSidebar(
                
                h4("Training options"),
                selectInput("algo", "Type of network :", 
-                           choices= list("Multilayer Perceptron (rprop)"= "mlp", 
+                           choices= list("Multilayer Perceptron (rprop)"= "rprop", 
                                          "Extreme Learning Machine"= "elm", 
                                          "Multilayer Perceptron (nnet)"= "nnet")),
                actionButton("trainbutton","Train"),
-               conditionalPanel("input.algo == 'mlp'", 
+               conditionalPanel("input.algo == 'rprop'", 
                                 selectInput("nhidlay", "Number of hidden layers:", 
                                             choices= 1:4)),
                numericInput("nhid1", 
                             "Number of neurons in hidden layer 1:",
                             5, min= 1),
-               conditionalPanel("input.algo == 'mlp'", 
+               conditionalPanel("input.algo == 'rprop'", 
                                 conditionalPanel("input.nhidlay >= 2", 
                                                  numericInput("nhid2", 
                                                               "Number of neurons in hidden layer 2:", 
