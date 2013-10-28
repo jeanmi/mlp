@@ -112,9 +112,6 @@ partialDer <- function(input, matA, matB, index.in, index.out,
 # table of horizontal radiobuttons
 tableHorizRadio <- function(names, labels, choices) {
   tmp.text <- "<TABLE cellpadding= 10> "
-  tmp.text <- paste(tmp.text, "<TD> </TD> <TD> <b>", 
-                    paste(choices, collapse= "</b> </TD> <TD> <b>"),
-                    '</TD>')
   for (i_name in 1:length(names)){
     tmp.line= paste("<TR> <TD> <b>", names[i_name], "</b> </TD>")
     for (i_choice in 1:length(choices))
@@ -123,7 +120,7 @@ tableHorizRadio <- function(names, labels, choices) {
                               labels[i_name], ' Value =', 
                               paste('"', choices[i_choice], '"', sep=""),
                               if(i_choice == 1) 'checked', 
-                              '</TD>'))
+                              '</TD>', choices[i_choice]))
     tmp.text <- paste(tmp.text, tmp.line, "</TR>")
   }
   tmp.text <- paste(tmp.text, '</TD></TABLE>')
@@ -239,6 +236,10 @@ shinyServer(function(input, output, session) {
   ##############################################################################
   ## Training tab
   
+  output$trainMessage <- renderPrint({
+    cat("Hit the Train button to train the neural network.")
+  })
+  
   # File upload updates variable choice list and size of training sample
   observe({
     if (is.null(input$file1)) return(NULL)
@@ -246,14 +247,14 @@ shinyServer(function(input, output, session) {
     output$varchoice <- renderUI({
       tableHorizRadio(names= colnames(current.all.data), 
                       labels= paste("var", 1:ncol(current.all.data), sep=""),
-#                       choices= c("Not used",
-#                                  "Numeric Input",
-#                                  "Categorical Input",
-#                                  "Numeric Output",
-#                                  "Categorical Output"))
                       choices= c("Not used",
-                                 "Input",
-                                 "Output"))
+                                 "Numeric Input",
+                                 "Categorical Input",
+                                 "Numeric Output",
+                                 "Categorical Output"))
+#                       choices= c("Not used",
+#                                  "Input",
+#                                  "Output"))
     })
     
     output$ntrain <- renderUI({
@@ -284,24 +285,29 @@ shinyServer(function(input, output, session) {
   theTrain<- observe({ if(input$trainbutton > crt.train.clicks) {
     dInput()
     if(is.null(current.all.data)) {
+      output$trainMessage <- renderPrint({
+        cat("Error : first import a dataset.")
+      })
       server.env$crt.train.clicks <- input$trainbutton
       return(NULL)
     }
     
-#     tmp.selvars= c(crt.var.types[["Numeric Input"]], 
-#                    crt.var.types[["Numeric Output"]],
-#                    crt.var.types[["Categorical Input"]],
-#                    crt.var.types[["Categorical Output"]])
-    tmp.selvars= c(crt.var.types[["Input"]], 
-                   crt.var.types[["Output"]])
+    tmp.selvars= c(crt.var.types[["Numeric Input"]], 
+                   crt.var.types[["Numeric Output"]],
+                   crt.var.types[["Categorical Input"]],
+                   crt.var.types[["Categorical Output"]])
+#     tmp.selvars= c(crt.var.types[["Input"]], 
+#                    crt.var.types[["Output"]])
 
-#     tmp.varchoicein <- c(crt.var.types[["Numeric Input"]], 
-#                          crt.var.types[["Categorical Input"]])
-#     tmp.varchoiceout <- c(crt.var.types[["Numeric Output"]], 
-#                           crt.var.types[["Categorical Output"]])
-    tmp.varchoicein <- c(crt.var.types[["Input"]])
-    tmp.varchoiceout <- c(crt.var.types[["Output"]])
+    tmp.varchoicein <- c(crt.var.types[["Numeric Input"]], 
+                         crt.var.types[["Categorical Input"]])
+    tmp.varchoiceout <- c(crt.var.types[["Numeric Output"]], 
+                          crt.var.types[["Categorical Output"]])
+#     tmp.varchoicein <- c(crt.var.types[["Input"]])
+#     tmp.varchoiceout <- c(crt.var.types[["Output"]])
     if (is.null(tmp.varchoicein) | is.null(tmp.varchoiceout)) {
+      output$trainMessage <- renderPrint(cat("Error : select at least one",
+                                             "input and one output variable."))
       server.env$crt.train.clicks <- input$trainbutton
       return(NULL)
     }
@@ -309,7 +315,27 @@ shinyServer(function(input, output, session) {
     # remove from working data the obs where input or output are NA
     tmp.data <- server.env$current.all.data[
       rowSums(is.na(current.all.data[, tmp.selvars])) == 0, ]
-                       
+    
+    # check for constants
+    tmp.constants <- sapply(tmp.data[, tmp.selvars], 
+                            function(x) length(unique(x)) < 2)
+    if (any(tmp.constants)) {
+      output$trainMessage <- renderPrint({
+        cat("Error : variable(s)", 
+            paste(tmp.selvars[tmp.constants], collapse= ","),
+            "are constant.")        
+      })
+      return(NULL)
+    }
+    
+    # make variables conform to specified types
+    for (i_var in c(crt.var.types[["Categorical Input"]],
+                    crt.var.types[["Categorical Output"]]))
+      tmp.data[, i_var] <- as.factor(tmp.data[, i_var])
+    for (i_var in c(crt.var.types[["Numeric Input"]],
+                    crt.var.types[["Numeric Output"]]))
+      tmp.data[, i_var] <- as.numeric(tmp.data[, i_var])
+    
     set.seed(input$randseed)
     tmp.train <- sample(1:nrow(tmp.data), size= input$ntrain)
     tmp.test <- (1:nrow(tmp.data))[-tmp.train]
@@ -328,7 +354,7 @@ shinyServer(function(input, output, session) {
     colnames(tmp.matrix) <- c(tmp.namesout, tmp.matnamesin)
     rownames(tmp.matrix) <- tmp.rownames
 
-    # normalize (TODO : fix problem when only one input)
+    # normalize
     tmp.varin.range <- sapply(as.data.frame(tmp.matrix[tmp.train, 
                                                        tmp.matnamesin]), 
                               FUN= range)
@@ -407,26 +433,17 @@ shinyServer(function(input, output, session) {
     }
     names(server.env$crt.fits)[crt.n.fits] <- paste(crt.n.fits, "-", input$algo)
     
+    output$trainMessage <- renderPrint({
+      cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
+          "You may train another neural network to compare results.")
+    })
+      
     # Update models list on the left
     updateSelectInput(session, "fit", choices= rev(names(crt.fits)))
     
     # Update train button counter
     server.env$crt.train.clicks <- input$trainbutton
   }})
-  
-  # Training message
-  output$trainMessage <- renderPrint({
-    input$fit # (fit selector is updated at the end of each training)
-    dInput()
-    if (is.null(input$file1))
-      return(cat("First import a dataset."))
-    input$trainbutton
-    
-    if (crt.n.fits == 0) 
-      return(cat("\nHit the Train button to train the neural network."))
-    cat(" Training successful. (Name:", names(crt.fits)[crt.n.fits], ")\n",
-        "You may train another neural network to compare results.")
-  })
   
   # Variables message
   output$varMessage <- renderPrint({
@@ -437,25 +454,25 @@ shinyServer(function(input, output, session) {
     input$trainbutton
     
     var.labels <- paste("var", 1:ncol(current.all.data), sep="")
-#     tmp.vars <- list("Not used"= NULL, "Numeric Output"= NULL,
-#                      "Numeric Input"= NULL, "Categorical Output"= NULL,
-#                      "Categorical Input"= NULL)
-    tmp.vars <- list("Not used"= NULL, "Output"= NULL, "Input"= NULL)
+    tmp.vars <- list("Not used"= NULL, "Numeric Output"= NULL,
+                     "Numeric Input"= NULL, "Categorical Output"= NULL,
+                     "Categorical Input"= NULL)
+#     tmp.vars <- list("Not used"= NULL, "Output"= NULL, "Input"= NULL)
     for (i_var in 1:ncol(current.all.data))
       tmp.vars[[ input[[ var.labels[i_var] ]] ]] <- {
         c(tmp.vars[[input[[var.labels[i_var]]]]],
           colnames(current.all.data)[i_var])
       }
     
-#     if (length(tmp.vars[c("Numeric Output", "Categorical Output")]) == 0 &
-#           length(tmp.vars[c("Numeric Input", "Categorical Input")]) == 0 )
-    if (length(tmp.vars[c("Output")]) == 0 & length(tmp.vars[c("Input")]) == 0 )
+    if (length(tmp.vars[c("Numeric Output", "Categorical Output")]) == 0 &
+          length(tmp.vars[c("Numeric Input", "Categorical Input")]) == 0 )
+#     if (length(tmp.vars[c("Output")]) == 0 & length(tmp.vars[c("Input")]) == 0 )
       return(cat("Select at least one input and one output variable"))
     
-#     for (i_type in c("Numeric Output", "Categorical Output",
-#                      "Numeric Input", "Categorical Input"))
-    for (i_type in c("Output", "Input"))
-      if (!is.null(tmp.vars[[i_type]]))
+    for (i_type in c("Numeric Input", "Categorical Input",
+                     "Numeric Output", "Categorical Output"))
+#     for (i_type in c("Output", "Input"))
+#       if (!is.null(tmp.vars[[i_type]]))
         cat(i_type, ":", paste(tmp.vars[[i_type]], collapse= ", "), "\n")
     
     server.env$crt.var.types <- tmp.vars
