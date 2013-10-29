@@ -175,6 +175,10 @@ shinyUI(pageWithSidebar(
                                             choices= "(First train)")
                ),
                plotOutput("derplot")
+      ),
+      
+      tabPanel("Help",
+               plotOutput("testplot")
       )
     )
   )

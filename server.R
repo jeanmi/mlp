@@ -1206,6 +1206,9 @@ shinyServer(function(input, output, session) {
                                            %in% rownames(active.fit$data)]
               })
   })
+  
+  # Test plot (rstudio server problem)
+  output$testplot <- renderPlot(plot((-5:5)**2, t= "l"))
 })
 
 
