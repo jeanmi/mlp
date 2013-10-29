@@ -690,10 +690,13 @@ shinyServer(function(input, output, session) {
     # Find the best number of hidden neurons
     cost.5 <- elmCVErr(tmp.matrix, tries= 10, nhid= 5,
                        names.in= tmp.matnamesin, names.out= tmp.matnamesout)
-    end <- 100
-    cost.end <- -Inf
-    while (cost.5 > cost.end){
+    cost.end <- cost.5
+    end <- 15
+    cost.previous <- Inf
+    while (cost.previous > cost.end){
+      cost.previous <- cost.end
       end <- end * 2
+      warning(end)
       cost.end <- elmCVErr(tmp.matrix, tries= ifelse(end>10, 1, 10), nhid= end,
                            names.in= tmp.matnamesin, names.out= tmp.matnamesout)
     }
