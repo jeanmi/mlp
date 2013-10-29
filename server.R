@@ -1,7 +1,7 @@
 library(SwarmNet)
 library(elmNN)
 library(nnet)
-library(XLConnect)
+# library(XLConnect)
 
 # Max file input size :
 options(shiny.maxRequestSize= 30*1024^2)

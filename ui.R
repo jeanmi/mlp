@@ -19,13 +19,15 @@ shinyUI(pageWithSidebar(
                h2("Data importation"),
                p(HTML("To run the application, import your data set using the 
                 import button on the left panel. Your data must be supplied 
-                in the form of a text/csv or excel file. If the importation is  
+#                 in the form of a text/csv or excel file. If the importation is  
+                in the form of a text/csv file. If the importation is  
                 done properly, a preview of the data is displayed below as a 
                 table. When this is done, you can proceed to the next step: 
                 Train Net")),
                selectInput("filetype", "Type of file", 
-                           list("CSV or Text"= "csv",
-                                "Excel"= "xls")),
+#                            list("CSV or Text"= "csv",
+#                                 "Excel"= "xls")),
+                           list("CSV or Text"= "csv")),
                fileInput('file1', "Choose File:"),
                checkboxInput('header', ' Header?', TRUE),
                conditionalPanel("input.filetype == 'csv'",
