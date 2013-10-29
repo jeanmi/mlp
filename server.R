@@ -132,12 +132,12 @@ tableHorizRadio <- function(names, labels, choices) {
   HTML(tmp.text)
 }
 
-# to avoid date error with excel files
-xtable <- function(x, ...) {
-  for (i in which(sapply(x, function(y) 
-    !all(is.na(match(c("POSIXt","Date"),class(y))))))) x[[i]] <- as.numeric(x[[i]])
-  xtable::xtable(x, ...)
-}
+# # fix xtable to avoid date error with excel files
+# xtable <- function(x, ...) {
+#   for (i in which(sapply(x, function(y) 
+#     !all(is.na(match(c("POSIXt","Date"),class(y))))))) x[[i]] <- as.numeric(x[[i]])
+#   xtable::xtable(x, ...)
+# }
 
 # adapted golden search
 phi = (1 + sqrt(5)) / 2

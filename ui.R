@@ -17,9 +17,14 @@ shinyUI(pageWithSidebar(
 
       tabPanel("Preview Data",
                h2("Data importation"),
+#                p(HTML("To run the application, import your data set using the 
+#                 import button on the left panel. Your data must be supplied 
+#                 in the form of a text/csv or excel file. If the importation is  
+#                 done properly, a preview of the data is displayed below as a 
+#                 table. When this is done, you can proceed to the next step: 
+#                 Train Net")),
                p(HTML("To run the application, import your data set using the 
                 import button on the left panel. Your data must be supplied 
-#                 in the form of a text/csv or excel file. If the importation is  
                 in the form of a text/csv file. If the importation is  
                 done properly, a preview of the data is displayed below as a 
                 table. When this is done, you can proceed to the next step: 
