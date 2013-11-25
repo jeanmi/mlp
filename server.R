@@ -314,6 +314,7 @@ shinyServer(function(input, output, session) {
   
   # File upload updates variable choice list and size of training sample
   observe({
+    dInput()
     if (is.null(input$file1)) return(NULL)
 
     output$varchoice <- renderUI({
